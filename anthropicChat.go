@@ -26,11 +26,12 @@ type Message struct {
 }
 
 type CreateMessageRequest struct {
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	MaxTokens   int       `json:"max_tokens"`
-	Temperature float64   `json:"temperature,omitempty"`
-	System      string    `json:"system,omitempty"`
+	Model       string      `json:"model"`
+	Messages    []Message   `json:"messages"`
+	MaxTokens   int         `json:"max_tokens"`
+	Temperature float64     `json:"temperature,omitempty"`
+	System      string      `json:"system,omitempty"`
+	Tools       interface{} `json:"tools,omitempty"`
 }
 
 type CreateMessageResponse struct {
@@ -45,8 +46,11 @@ type CreateMessageResponse struct {
 }
 
 type Content struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type  string            `json:"type"`
+	Text  string            `json:"text"`
+	Id    string            `json:"id"`
+	Name  string            `json:"name"`
+	Input map[string]string `json:"input"`
 }
 
 type Usage struct {
@@ -107,7 +111,7 @@ func (c *Client) CreateMessage(req CreateMessageRequest) (*CreateMessageResponse
 
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", c.APIKey)
-
+	httpReq.Header.Set("anthropic-version", "2023-06-01")
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("error sending request: %v", err)
