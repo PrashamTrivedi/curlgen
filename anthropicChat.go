@@ -77,10 +77,13 @@ var models = []Model{
 	},
 }
 
-func NewAnthropicClient() (*Client, error) {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+func NewAnthropicClient(anthropicKey string) (*Client, error) {
+	apiKey := anthropicKey
 	if apiKey == "" {
-		return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable is not set")
+		apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("ANTHROPIC_API_KEY is not provided and environment variable is not set")
+		}
 	}
 
 	return &Client{
