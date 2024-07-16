@@ -54,7 +54,7 @@ var rootCmd = &cobra.Command{
 }
 
 var listModelsCmd = &cobra.Command{
-	Use:   "list-models",
+	Use:   "listModels",
 	Short: "List available models from OpenAI and Anthropic",
 	Run: func(cmd *cobra.Command, args []string) {
 		listModels()
@@ -114,21 +114,35 @@ func generateCurls(taskContent, filesContent, prompt, model string) {
 		taskContent, filesContent, prompt, model)
 }
 
-func listModels() {
-
+func initOpenAIClient() *openai.Client {
 	openaiKey := ReadConfig(OpenaiKey)
 	if openaiKey == "" {
 		fmt.Println("OpenAI key not found. Please set it using the config command.")
 		os.Exit(1)
 	}
-	client := openai.NewClient(openaiKey)
-	anthropicClient, error := NewAnthropicClient()
-	if error != nil {
-		fmt.Println("Error creating anthropic client:", error)
+	return openai.NewClient(openaiKey)
+}
+
+func initAnthropicClient() *Client {
+	anthropicKey := ReadConfig(AnthropicKey)
+	if anthropicKey == "" {
+		fmt.Println("Anthropic key not found. Please set it using the config command.")
 		os.Exit(1)
 	}
+	anthropicClient, err := NewAnthropicClient(anthropicKey)
+	if err != nil {
+		fmt.Println("Error creating Anthropic client:", err)
+		os.Exit(1)
+	}
+	return anthropicClient
+}
+
+func listModels() {
+	openaiClient := initOpenAIClient()
+	anthropicClient := initAnthropicClient()
+
 	fmt.Println("Fetching Models")
-	openaiModels, err := client.ListModels(context.Background())
+	openaiModels, err := openaiClient.ListModels(context.Background())
 	anthropicModels := anthropicClient.ListModels()
 	// TODO: Implement API calls to list models from OpenAI and Anthropic
 	fmt.Println("Available models:")
