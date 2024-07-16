@@ -40,7 +40,34 @@ func init() {
 
 	rootCmd.AddCommand(listModelsCmd)
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(printConfigCmd)
+}
 
+var printConfigCmd = &cobra.Command{
+	Use:   "printConfig",
+	Short: "Print all configurations",
+	Run: func(cmd *cobra.Command, args []string) {
+		printConfigurations()
+	},
+}
+
+func printConfigurations() {
+	allSettings := ReadAllConfig()
+	fmt.Println("Current configurations:")
+	for key, value := range allSettings {
+		if key == OpenaiKey || key == AnthropicKey {
+			fmt.Printf("%s: %s\n", key, maskAPIKey(value.(string)))
+		} else {
+			fmt.Printf("%s: %v\n", key, value)
+		}
+	}
+}
+
+func maskAPIKey(key string) string {
+	if len(key) <= 8 {
+		return strings.Repeat("*", len(key))
+	}
+	return key[:4] + strings.Repeat("*", len(key)-8) + key[len(key)-4:]
 }
 
 var rootCmd = &cobra.Command{
