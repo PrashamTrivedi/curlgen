@@ -16,7 +16,8 @@
 				"GitHub.copilot",
 				"redhat.vscode-yaml",
 				"GitHub.copilot-labs",
-				"GitHub.copilot-chat"
+				"GitHub.copilot-chat",
+				"github.vscode-github-actions"
 			]
 		}
 	},
