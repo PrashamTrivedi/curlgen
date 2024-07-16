@@ -45,10 +45,10 @@ func createConfigPath() string {
 		return configFilePath
 	}
 	home, _ := os.UserHomeDir()
-	configPath := filepath.Join(home, ".assistants", "config.json")
+	configPath := filepath.Join(home, ".curlgen", "config.json")
 	// Create ~/.assistants/config.json if it doesn't exist
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		os.MkdirAll(filepath.Join(home, ".assistants"), os.ModePerm)
+		os.MkdirAll(filepath.Join(home, ".curlgen"), os.ModePerm)
 		os.Create(configPath)
 	}
 	return configPath
