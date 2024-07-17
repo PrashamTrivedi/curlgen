@@ -273,19 +273,53 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 		if err != nil {
 			log.Fatalf("Error calling Anthropic API: %v", err)
 		}
-		logger.Info("Response", "Anthropic", anthropicResp.Content)
+		logger.Debug("Response", "AnthropicResp", anthropicResp)
+		logger.Debug("Response", "Anthropic", anthropicResp.Content)
 		// loop through anthropicResp.Content
 		for _, content := range anthropicResp.Content {
 			if content.Type == "text" {
 				fmt.Println(content.Text)
 			} else if content.Type == "tool_use" {
-				fmt.Println(content.Name)
-				// fmt.Println(content.Input)
-				// logger.Info("Tool Use", "Name", content.Input)
-				for key, valueJson := range content.Input {
-					fmt.Printf("%s\n", key)
-					fmt.Printf("%s\n", valueJson)
+
+				// Input value is an interface, print the type, keys and values of it
+				// logger.Debug("Tool Use", "Name", content.Input)
+
+				logger.Debug("Tool Use", "Input", content.Input["curl_commands"])
+				curlCommandJson := content.Input["curl_commands"]
+				logger.Debug("Tool Use", "CurlCoomandJSON", curlCommandJson)
+				curlCommandJson = strings.ReplaceAll(curlCommandJson, "\n", "")
+				curlCommandJson = strings.ReplaceAll(curlCommandJson, "  ", " ")
+				curlCommandJson = strings.ReplaceAll(curlCommandJson, "\\--", "--")
+				// var toolResponse ToolResponse
+				// preprocessedJSON := strings.ReplaceAll(content.Input["curl_commands"], "\n", "")
+				// preprocessedJSON = strings.ReplaceAll(preprocessedJSON, "\\", "")
+				// // preprocessedJSON = strings.ReplaceAll(preprocessedJSON, "\\\"", "\"")
+				// logger.Debug("Tool Use", "PreprocessedJSON", preprocessedJSON)
+				var toolResponse ToolResponse
+				err := json.Unmarshal([]byte(curlCommandJson), &toolResponse.CurlCommands)
+				if err != nil {
+					fmt.Printf("Error unmarshalling: %v\n", err)
+				} else {
+					fmt.Printf("Successfully unmarshalled: %+v\n", toolResponse)
+					curlCommands := toolResponse.CurlCommands
+					for _, cmd := range curlCommands {
+						fmt.Printf("=== %s ===\n", cmd.Explanation)
+						fmt.Printf("Executing command: %s\n", cmd.Command)
+						// result, err := RunCommand([]string{cmd.Command})
+						// if err != nil {
+						// 	fmt.Printf("Error: %s\n", err.Error())
+						// } else {
+						// 	fmt.Printf("Result:\n%s\n", result)
+						// }
+						fmt.Println()
+					}
 				}
+
+				// logger.Info("Tool Use", "Name", content.Input)
+				// for key, valueJson := range content.Input {
+				// 	fmt.Printf("%s\n", key)
+				// 	fmt.Printf("%s\n", valueJson)
+				// }
 			}
 		}
 
@@ -349,7 +383,9 @@ func listModels() {
 }
 
 func main() {
-	logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	logger = slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: DefaultLogLevel,
+	}))
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -381,51 +417,61 @@ func handleFunctionCall(responseMessage openai.ChatCompletionMessage, openaiClie
 				curlCommands := toolResponse.CurlCommands
 				var output strings.Builder
 				for _, cmd := range curlCommands {
-					commandToExecute := strings.ReplaceAll(cmd.Command, "\n", "")
-					commandToExecute = strings.ReplaceAll(commandToExecute, "\\", "")
+					commandToExecute := CleanCommand(cmd.Command)
 					output.WriteString(fmt.Sprintf("=== %s ===\n", cmd.Explanation))
 					output.WriteString(fmt.Sprintf("Executing command: %s\n", commandToExecute))
-					result, err := RunCommand([]string{commandToExecute})
-					if err != nil {
-						output.WriteString(fmt.Sprintf("Error: %s\n", err.Error()))
-					} else {
-						output.WriteString(fmt.Sprintf("Result:\n%s\n", result))
-					}
+					// result, err := RunCommand([]string{commandToExecute})
+					// if err != nil {
+					// 	output.WriteString(fmt.Sprintf("Error: %s\n", err.Error()))
+					// } else {
+					// 	output.WriteString(fmt.Sprintf("Result:\n%s\n", result))
+					// }
 					output.WriteString("\n")
 				}
 				functionMessage.Content = output.String()
 			}
 		}
 
-		functionMessages = append(functionMessages, functionMessage)
-		messages := append(messages, responseMessage, functionMessage)
-		chatRequest := openai.ChatCompletionRequest{
-			Model:    model,
-			Messages: messages,
-			Tools:    tools,
-		}
-		afterFuncResponse, err := openaiClient.CreateChatCompletion(
-			context.Background(),
-			chatRequest,
-		)
-		if err != nil {
-			logger.Error("ChatCompletion", "error", err)
-			return nil, err
-		}
-		functionMessages = append(functionMessages, afterFuncResponse.Choices[0].Message)
-		functionResponseMessage := afterFuncResponse.Choices[0].Message
-		fmt.Println(functionResponseMessage.Content)
-		if functionResponseMessage.FunctionCall != nil && functionResponseMessage.FunctionCall.Name != "" {
-			// Create a copy of c
-			updatedMessagess := messages
-			newFunctionMessages, err := handleFunctionCall(functionResponseMessage, openaiClient, resp, updatedMessagess, tools)
-			if err != nil {
-				return nil, err
-			}
-			functionMessages = append(functionMessages, newFunctionMessages...)
-		}
+		// // functionMessages = append(functionMessages, functionMessage)
+		// // messages := append(messages, responseMessage, functionMessage)
+		// // chatRequest := openai.ChatCompletionRequest{
+		// // 	Model:    model,
+		// // 	Messages: messages,
+		// // 	Tools:    tools,
+		// // }
+		// // afterFuncResponse, err := openaiClient.CreateChatCompletion(
+		// // 	context.Background(),
+		// // 	chatRequest,
+		// // )
+		// // if err != nil {
+		// // 	logger.Error("ChatCompletion", "error", err)
+		// // 	return nil, err
+		// // }
+		// functionMessages = append(functionMessages, afterFuncResponse.Choices[0].Message)
+		// functionResponseMessage := afterFuncResponse.Choices[0].Message
+		// fmt.Println(functionResponseMessage.Content)
+		// if functionResponseMessage.FunctionCall != nil && functionResponseMessage.FunctionCall.Name != "" {
+		// 	// Create a copy of c
+		// 	updatedMessagess := messages
+		// 	newFunctionMessages, err := handleFunctionCall(functionResponseMessage, openaiClient, resp, updatedMessagess, tools)
+		// 	if err != nil {
+		// 		return nil, err
+		// 	}
+		// 	functionMessages = append(functionMessages, newFunctionMessages...)
+		// }
 	}
 	return functionMessages, nil
+}
+
+// CleanCommand sanitizes the input command by removing specific characters and sequences.
+func CleanCommand(input string) string {
+	// Remove newline characters
+	result := strings.ReplaceAll(input, "\n", "")
+	// Remove backslashes
+	result = strings.ReplaceAll(result, "\\", "")
+	// Replace escaped double quotes with double quotes
+	result = strings.ReplaceAll(result, "\\\"", "\"")
+	return result
 }
 
 func RunCommand(commands []string) (string, error) {
@@ -442,7 +488,7 @@ func RunCommand(commands []string) (string, error) {
 		cmd := exec.Command(args[0], args[1:]...)
 		var out strings.Builder
 		cmd.Stdout = &out
-		cmd.Stderr = &out
+		cmd.Stderr = os.Stderr
 
 		err := cmd.Run()
 		if err != nil {

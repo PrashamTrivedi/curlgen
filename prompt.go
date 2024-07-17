@@ -115,7 +115,6 @@ Based on the provided information, generate appropriate curl commands for testin
 3. Include examples for different HTTP methods (GET, POST, PUT, DELETE) if applicable.
 4. Provide variations of the curl commands to test different scenarios or edge cases.
 5. Include any necessary query parameters or path variables.
-6. If the API uses JWT or other token-based authentication, include a placeholder for the token.
 
 Please generate a set of curl commands that thoroughly test the API endpoint described above.
 `, pg.TaskDefinition, pg.UpdatedCode, pg.APIGatewayJSON, pg.AdditionalInfo, pg.SampleAPICall)
