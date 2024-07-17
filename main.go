@@ -249,13 +249,14 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 			fmt.Println("Error handling function call: ", err.Error())
 
 		}
-		isFunctionHandled := err == nil && len(functionMessages) > 0
-		if isFunctionHandled {
-			messages = append(messages, functionMessages...)
-		} else {
-			messages = append(messages, resp.Choices[0].Message)
-			fmt.Println(resp.Choices[0].Message.Content)
-		}
+		logger.Debug("Function messages", "FunctionMessages", functionMessages)
+		// isFunctionHandled := err == nil && len(functionMessages) > 0
+		// messages = append(messages, functionMessages...)
+		// if !isFunctionHandled {
+		// 	fmt.Println(resp.Choices[0].Message.Content)
+		// }
+		// fmt.Println(messages)
+
 	case *Client:
 		fmt.Println("Using Anthropic client")
 		anthropicClient := initAnthropicClient()
@@ -305,12 +306,12 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 					for _, cmd := range curlCommands {
 						fmt.Printf("=== %s ===\n", cmd.Explanation)
 						fmt.Printf("Executing command: %s\n", cmd.Command)
-						// result, err := RunCommand([]string{cmd.Command})
-						// if err != nil {
-						// 	fmt.Printf("Error: %s\n", err.Error())
-						// } else {
-						// 	fmt.Printf("Result:\n%s\n", result)
-						// }
+						result, err := RunCommand([]string{cmd.Command})
+						if err != nil {
+							fmt.Printf("Error: %s\n", err.Error())
+						} else {
+							fmt.Printf("Result:\n%s\n", result)
+						}
 						fmt.Println()
 					}
 				}
@@ -396,69 +397,74 @@ func handleFunctionCall(responseMessage openai.ChatCompletionMessage, openaiClie
 	resp openai.ChatCompletionResponse, messages []openai.ChatCompletionMessage, tools []openai.Tool) ([]openai.ChatCompletionMessage, error) {
 
 	functionMessages := make([]openai.ChatCompletionMessage, 0)
+	executeCurlTool := responseMessage.ToolCalls[0]
+	logger.Debug("Function call", "FunctionCall", responseMessage.ToolCalls)
 	if responseMessage.ToolCalls != nil && responseMessage.ToolCalls[0].Function.Name != "" {
 		functionMessage := openai.ChatCompletionMessage{
 			Role:       openai.ChatMessageRoleTool,
-			ToolCallID: responseMessage.ToolCalls[0].ID,
-			Name:       responseMessage.ToolCalls[0].Function.Name,
+			ToolCallID: executeCurlTool.ID,
+			Name:       executeCurlTool.Function.Name,
 			Content:    "",
 		}
-		logger.Info("Function call: ", "Name", resp.Choices[0].Message.ToolCalls[0].Function.Name)
-		logger.Info("Function call: ", "Args", resp.Choices[0].Message.ToolCalls[0].Function.Arguments)
-		functionMessage.Name = resp.Choices[0].Message.ToolCalls[0].Function.Name
+		logger.Debug("Function call: ", "Name", executeCurlTool.Function.Name)
+		logger.Debug("Function call: ", "Args", executeCurlTool.Function.Arguments)
+		functionMessage.Name = executeCurlTool.Function.Name
 
-		if resp.Choices[0].Message.ToolCalls[0].Function.Name == "execute_curl" {
+		if executeCurlTool.Function.Name == "execute_curl" {
+
 			var toolResponse ToolResponse
-			err := json.Unmarshal([]byte(resp.Choices[0].Message.ToolCalls[0].Function.Arguments), &toolResponse)
+			arguments := executeCurlTool.Function.Arguments
+			logger.Debug("OpenAI Arguments", "Arguments", arguments)
+
+			err := json.Unmarshal([]byte(arguments), &toolResponse)
 			if err != nil {
 				logger.Error("Error parsing curl commands", "error", err)
 				functionMessage.Content = fmt.Sprintf("Error parsing curl commands: %s", err.Error())
 			} else {
 				curlCommands := toolResponse.CurlCommands
+				logger.Debug("OpenAI Arguments", "CurlCommands", curlCommands)
 				var output strings.Builder
 				for _, cmd := range curlCommands {
 					commandToExecute := CleanCommand(cmd.Command)
 					output.WriteString(fmt.Sprintf("=== %s ===\n", cmd.Explanation))
 					output.WriteString(fmt.Sprintf("Executing command: %s\n", commandToExecute))
-					// result, err := RunCommand([]string{commandToExecute})
-					// if err != nil {
-					// 	output.WriteString(fmt.Sprintf("Error: %s\n", err.Error()))
-					// } else {
-					// 	output.WriteString(fmt.Sprintf("Result:\n%s\n", result))
-					// }
+					result, err := RunCommand([]string{commandToExecute})
+					if err != nil {
+						output.WriteString(fmt.Sprintf("Error: %s\n", err.Error()))
+					} else {
+						output.WriteString(fmt.Sprintf("Result:\n%s\n", result))
+					}
 					output.WriteString("\n")
 				}
 				functionMessage.Content = output.String()
 			}
 		}
+		functionMessages = append(functionMessages, functionMessage)
+		messages := append(messages, responseMessage, functionMessage)
+		chatRequest := openai.ChatCompletionRequest{
+			Model:    model,
+			Messages: messages,
+			Tools:    tools,
+		}
+		afterFuncResponse, err := openaiClient.CreateChatCompletion(
+			context.Background(),
+			chatRequest,
+		)
+		if err != nil {
+			slog.Error("ChatCompletion", "error", err)
+			return nil, err
+		}
+		functionMessages = append(functionMessages, afterFuncResponse.Choices[0].Message)
+		functionResponseMessage := afterFuncResponse.Choices[0].Message
+		fmt.Println(functionResponseMessage.Content)
+		if functionResponseMessage.FunctionCall != nil && functionResponseMessage.FunctionCall.Name != "" {
+			newFunctionMessages, err := handleFunctionCall(functionResponseMessage, openaiClient, resp, messages, tools)
+			if err != nil {
+				return nil, err
+			}
+			functionMessages = append(functionMessages, newFunctionMessages...)
+		}
 
-		// // functionMessages = append(functionMessages, functionMessage)
-		// // messages := append(messages, responseMessage, functionMessage)
-		// // chatRequest := openai.ChatCompletionRequest{
-		// // 	Model:    model,
-		// // 	Messages: messages,
-		// // 	Tools:    tools,
-		// // }
-		// // afterFuncResponse, err := openaiClient.CreateChatCompletion(
-		// // 	context.Background(),
-		// // 	chatRequest,
-		// // )
-		// // if err != nil {
-		// // 	logger.Error("ChatCompletion", "error", err)
-		// // 	return nil, err
-		// // }
-		// functionMessages = append(functionMessages, afterFuncResponse.Choices[0].Message)
-		// functionResponseMessage := afterFuncResponse.Choices[0].Message
-		// fmt.Println(functionResponseMessage.Content)
-		// if functionResponseMessage.FunctionCall != nil && functionResponseMessage.FunctionCall.Name != "" {
-		// 	// Create a copy of c
-		// 	updatedMessagess := messages
-		// 	newFunctionMessages, err := handleFunctionCall(functionResponseMessage, openaiClient, resp, updatedMessagess, tools)
-		// 	if err != nil {
-		// 		return nil, err
-		// 	}
-		// 	functionMessages = append(functionMessages, newFunctionMessages...)
-		// }
 	}
 	return functionMessages, nil
 }
