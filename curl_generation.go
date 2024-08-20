@@ -42,7 +42,7 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 
 	for i, cmd := range curlCommands {
 		slog.Debug("Generated curl command", "index", i, "command", cmd.Command)
-		
+
 		// Replace placeholders with actual values if provided
 		if apiKey != "" {
 			cmd.Command = strings.ReplaceAll(cmd.Command, "{{API_KEY}}", apiKey)
@@ -50,7 +50,7 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 		if apiURL != "" {
 			cmd.Command = strings.ReplaceAll(cmd.Command, "{{API_URL}}", apiURL)
 		}
-		
+
 		fmt.Printf("Command: %s\nExplanation: %s\n\n", cmd.Command, cmd.Explanation)
 		if executeCurl {
 			slog.Debug("Executing curl command", "index", i)
@@ -86,6 +86,7 @@ func generateCurlsWithOpenAI(client *openai.Client, promptContent string) ([]Cur
 		return nil, fmt.Errorf("error creating chat completion with OpenAI: %w", err)
 	}
 
+	slog.Debug("OpenAI response", "response", resp)
 	var toolResponse ToolResponse
 	err = json.Unmarshal([]byte(resp.Choices[0].Message.Content), &toolResponse)
 	if err != nil {
@@ -105,6 +106,7 @@ func generateCurlsWithAnthropic(client *Client, promptContent string) ([]CurlCom
 	if err != nil {
 		return nil, fmt.Errorf("error creating message with Anthropic: %w", err)
 	}
+	slog.Debug("Anthropic response", "response", resp)
 
 	var toolResponse ToolResponse
 	err = json.Unmarshal([]byte(resp.Content[0].Text), &toolResponse)
