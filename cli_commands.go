@@ -100,9 +100,3 @@ var (
 	removeOpenAIKey    bool
 	removeAnthropicKey bool
 )
-
-func init() {
-	rootCmd.AddCommand(listModelsCmd)
-	rootCmd.AddCommand(configCmd)
-	rootCmd.AddCommand(printConfigCmd)
-}

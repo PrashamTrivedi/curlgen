@@ -21,10 +21,11 @@ func readConfig(configKey string) string {
 	viper.SetConfigFile(configPath)
 	viper.ReadInConfig()
 	value := viper.GetString(configKey)
+	maskedValue := value
 	if configKey == OPENAI_KEY || configKey == ANTHROPIC_KEY {
-		value = maskAPIKey(value)
+		maskedValue = maskAPIKey(value)
 	}
-	slog.Debug("Read config", "key", configKey, "value", value)
+	slog.Debug("Read config", "key", configKey, "value", maskedValue)
 	return value
 }
 

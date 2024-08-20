@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/sashabaranov/go-openai"
 )
@@ -22,13 +23,13 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 
 	switch c := client.(type) {
 	case *openai.Client:
-		promptContent, tools := promptGen.generateOpenAIPrompt()
+		promptContent := promptGen.generatePrompt()
 		slog.Debug("Generating curls with OpenAI")
-		curlCommands, err = generateCurlsWithOpenAI(c, promptContent, tools)
+		curlCommands, err = generateCurlsWithOpenAI(c, promptContent)
 	case *Client:
-		promptContent, tools := promptGen.generateAnthropicPrompt()
+		promptContent := promptGen.generatePrompt()
 		slog.Debug("Generating curls with Anthropic")
-		curlCommands, err = generateCurlsWithAnthropic(c, promptContent, tools)
+		curlCommands, err = generateCurlsWithAnthropic(c, promptContent)
 	default:
 		slog.Error("Unsupported client type")
 		return
@@ -41,6 +42,15 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 
 	for i, cmd := range curlCommands {
 		slog.Debug("Generated curl command", "index", i, "command", cmd.Command)
+		
+		// Replace placeholders with actual values if provided
+		if apiKey != "" {
+			cmd.Command = strings.ReplaceAll(cmd.Command, "{{API_KEY}}", apiKey)
+		}
+		if apiURL != "" {
+			cmd.Command = strings.ReplaceAll(cmd.Command, "{{API_URL}}", apiURL)
+		}
+		
 		fmt.Printf("Command: %s\nExplanation: %s\n\n", cmd.Command, cmd.Explanation)
 		if executeCurl {
 			slog.Debug("Executing curl command", "index", i)
@@ -55,7 +65,7 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 	}
 }
 
-func generateCurlsWithOpenAI(client *openai.Client, promptContent string, tools []openai.Tool) ([]CurlCommand, error) {
+func generateCurlsWithOpenAI(client *openai.Client, promptContent string) ([]CurlCommand, error) {
 	resp, err := client.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
@@ -66,7 +76,9 @@ func generateCurlsWithOpenAI(client *openai.Client, promptContent string, tools 
 					Content: promptContent,
 				},
 			},
-			Tools: tools,
+			ResponseFormat: &openai.ChatCompletionResponseFormat{
+				Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+			},
 		},
 	)
 
@@ -77,17 +89,17 @@ func generateCurlsWithOpenAI(client *openai.Client, promptContent string, tools 
 	var toolResponse ToolResponse
 	err = json.Unmarshal([]byte(resp.Choices[0].Message.Content), &toolResponse)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling OpenAI tool response: %w", err)
+		return nil, fmt.Errorf("error unmarshaling OpenAI JSON response: %w", err)
 	}
 
 	return toolResponse.CurlCommands, nil
 }
 
-func generateCurlsWithAnthropic(client *Client, promptContent string, tools []Tool) ([]CurlCommand, error) {
+func generateCurlsWithAnthropic(client *Client, promptContent string) ([]CurlCommand, error) {
 	resp, err := client.CreateMessage(CreateMessageRequest{
 		Model:    model,
 		Messages: []Message{{Role: "user", Content: promptContent}},
-		Tools:    tools,
+		System:   "Respond only with a JSON object containing an array of curl commands.",
 	})
 
 	if err != nil {
@@ -97,7 +109,7 @@ func generateCurlsWithAnthropic(client *Client, promptContent string, tools []To
 	var toolResponse ToolResponse
 	err = json.Unmarshal([]byte(resp.Content[0].Text), &toolResponse)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling Anthropic tool response: %w", err)
+		return nil, fmt.Errorf("error unmarshaling Anthropic JSON response: %w", err)
 	}
 
 	return toolResponse.CurlCommands, nil
