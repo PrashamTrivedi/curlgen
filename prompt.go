@@ -9,7 +9,7 @@ import (
 	"github.com/sashabaranov/go-openai/jsonschema"
 )
 
-type PromptGenerator struct {
+type promptGenerator struct {
 	TaskDefinition string
 	UpdatedCode    string
 	APIGatewayJSON string
@@ -74,8 +74,8 @@ type ToolResponse struct {
 	CurlCommands []CurlCommand `json:"curl_commands"`
 }
 
-func NewPromptGenerator(taskDefinition, updatedCode, apiGatewayJSON, additionalInfo, sampleAPICall string) *PromptGenerator {
-	return &PromptGenerator{
+func newPromptGenerator(taskDefinition, updatedCode, apiGatewayJSON, additionalInfo, sampleAPICall string) *promptGenerator {
+	return &promptGenerator{
 		TaskDefinition: taskDefinition,
 		UpdatedCode:    updatedCode,
 		APIGatewayJSON: apiGatewayJSON,
@@ -84,7 +84,7 @@ func NewPromptGenerator(taskDefinition, updatedCode, apiGatewayJSON, additionalI
 	}
 }
 
-func (pg *PromptGenerator) GeneratePrompt() string {
+func (pg *promptGenerator) generatePrompt() string {
 	prompt := fmt.Sprintf(`You are an expert API tester. Your task is to generate curl commands for testing an API endpoint based on the following information:
 
 Generate appropriate curl commands for testing the API endpoint based on the following information:
@@ -143,8 +143,8 @@ Please generate a set of curl commands that thoroughly test the API endpoint des
 	return strings.TrimSpace(prompt)
 }
 
-func (pg *PromptGenerator) GenerateAnthropicPrompt() (string, []Tool) {
-	basePrompt := pg.GeneratePrompt()
+func (pg *promptGenerator) generateAnthropicPrompt() (string, []Tool) {
+	basePrompt := pg.generatePrompt()
 
 	curlTool := CurlTool{
 
@@ -189,8 +189,8 @@ func (pg *PromptGenerator) GenerateAnthropicPrompt() (string, []Tool) {
 	return strings.TrimSpace(basePrompt), tools
 }
 
-func (pg *PromptGenerator) GenerateOpenAIPrompt() (string, []openai.Tool) {
-	basePrompt := pg.GeneratePrompt()
+func (pg *promptGenerator) generateOpenAIPrompt() (string, []openai.Tool) {
+	basePrompt := pg.generatePrompt()
 
 	params := jsonschema.Definition{
 		Type: jsonschema.Object,
