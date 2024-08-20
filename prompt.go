@@ -104,7 +104,7 @@ Updated Code:
 		var apiModel APIGatewayRequestModel
 		err := json.Unmarshal([]byte(pg.APIGatewayJSON), &apiModel)
 		if err != nil {
-			fmt.Printf("Warning: Failed to parse API Gateway JSON: %v\n", err)
+			fmt.Printf("Warning: Failed to parse API Gateway JSON: %v. Please check the JSON format.\n", err)
 			fmt.Println("API Gateway JSON:", pg.APIGatewayJSON)
 		}
 		prompt += fmt.Sprintf(`

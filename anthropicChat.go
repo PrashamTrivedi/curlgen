@@ -90,7 +90,7 @@ func NewAnthropicClient(anthropicKey string) (*Client, error) {
 	if apiKey == "" {
 		apiKey = os.Getenv("ANTHROPIC_API_KEY")
 		if apiKey == "" {
-			return nil, fmt.Errorf("ANTHROPIC_API_KEY is not provided and environment variable is not set")
+			return nil, fmt.Errorf("ANTHROPIC_API_KEY is not provided and environment variable is not set. Please set the API key using the config command or as an environment variable")
 		}
 	}
 
@@ -104,13 +104,13 @@ func NewAnthropicClient(anthropicKey string) (*Client, error) {
 func (c *Client) CreateMessage(req CreateMessageRequest) (*CreateMessageResponse, error) {
 	jsonData, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling request: %v", err)
+		return nil, fmt.Errorf("error marshaling Anthropic API request: %w", err)
 	}
 
 	url := fmt.Sprintf("%s/messages", c.BaseURL)
 	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
+		return nil, fmt.Errorf("error creating Anthropic API request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -118,23 +118,23 @@ func (c *Client) CreateMessage(req CreateMessageRequest) (*CreateMessageResponse
 	httpReq.Header.Set("anthropic-version", "2023-06-01")
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("error sending request: %v", err)
+		return nil, fmt.Errorf("error sending Anthropic API request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response body: %v", err)
+		return nil, fmt.Errorf("error reading Anthropic API response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("Anthropic API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var createResp CreateMessageResponse
 	err = json.Unmarshal(body, &createResp)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling response: %v", err)
+		return nil, fmt.Errorf("error unmarshaling Anthropic API response: %w", err)
 	}
 
 	return &createResp, nil
@@ -152,5 +152,5 @@ func (c *Client) GetModelByName(name string) (Model, error) {
 			return model, nil
 		}
 	}
-	return Model{}, fmt.Errorf("model not found: %s", name)
+	return Model{}, fmt.Errorf("Anthropic model not found: %s. Please check the model name and try again", name)
 }

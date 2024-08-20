@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,7 +20,12 @@ func readConfig(configKey string) string {
 	configPath := createConfigPath()
 	viper.SetConfigFile(configPath)
 	viper.ReadInConfig()
-	return viper.GetString(configKey)
+	value := viper.GetString(configKey)
+	if configKey == OPENAI_KEY || configKey == ANTHROPIC_KEY {
+		value = maskAPIKey(value)
+	}
+	slog.Debug("Read config", "key", configKey, "value", value)
+	return value
 }
 
 func readAllConfig() map[string]interface{} {
@@ -61,11 +67,29 @@ func writeConfig(keyValueMap map[string]string) {
 	configPath := createConfigPath()
 	viper.SetConfigFile(configPath)
 	for key, value := range keyValueMap {
+		if key == OPENAI_KEY || key == ANTHROPIC_KEY {
+			fmt.Printf("Warning: You are about to store the %s in %s. This is sensitive information.\n", key, configPath)
+			fmt.Print("Are you sure you want to proceed? (y/n): ")
+			var response string
+			fmt.Scanln(&response)
+			if response != "y" && response != "Y" {
+				fmt.Println("Operation cancelled.")
+				return
+			}
+		}
 		viper.Set(key, value)
 	}
 	if err := viper.WriteConfig(); err != nil {
-		panic(err)
+		panic(fmt.Errorf("failed to write config: %w", err))
 	}
+}
+
+func removeAPIKey(key string) error {
+	configPath := createConfigPath()
+	viper.SetConfigFile(configPath)
+	viper.ReadInConfig()
+	viper.Set(key, "")
+	return viper.WriteConfig()
 }
 
 func getTaskContent() string {
@@ -75,14 +99,14 @@ func getTaskContent() string {
 	if taskFile == "pbpaste" {
 		content, err := getClipboardContent()
 		if err != nil {
-			fmt.Println("Error reading from clipboard:", err)
+			fmt.Printf("Error reading from clipboard: %v\n", err)
 			return ""
 		}
 		return content
 	}
 	content, err := os.ReadFile(taskFile)
 	if err != nil {
-		fmt.Printf("Error reading task file: %v\n", err)
+		fmt.Printf("Error reading task file '%s': %v\n", taskFile, err)
 		return ""
 	}
 	return string(content)
@@ -102,7 +126,7 @@ func getExampleCallContent() string {
 	}
 	content, err := os.ReadFile(exampleCall)
 	if err != nil {
-		fmt.Printf("Error reading example API call file: %v\n", err)
+		fmt.Printf("Error reading example API call file '%s': %v\n", exampleCall, err)
 		return ""
 	}
 	return string(content)
@@ -113,7 +137,7 @@ func getFilesContent() string {
 	for _, file := range changedFiles {
 		fileContent, err := os.ReadFile(file)
 		if err != nil {
-			fmt.Printf("Error reading file %s: %v\n", file, err)
+			fmt.Printf("Error reading file '%s': %v\n", file, err)
 			continue
 		}
 		content.WriteString(fmt.Sprintf("File: %s\n%s\n\n", file, string(fileContent)))
@@ -125,7 +149,7 @@ func printConfigurations() {
 	allSettings := readAllConfig()
 	fmt.Println("Current configurations:")
 	for key, value := range allSettings {
-		if key == openAIKey || key == anthropicKey {
+		if key == OPENAI_KEY || key == ANTHROPIC_KEY {
 			fmt.Printf("%s: %s\n", key, maskAPIKey(value.(string)))
 		} else {
 			fmt.Printf("%s: %v\n", key, value)
@@ -140,8 +164,26 @@ func maskAPIKey(key string) string {
 	return key[:4] + strings.Repeat("*", len(key)-8) + key[len(key)-4:]
 }
 
+var allowedCommands = map[string]bool{
+	"curl": true,
+}
+
 func runCommand(command string) (string, error) {
-	cmd := exec.Command("sh", "-c", command)
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return "", fmt.Errorf("empty command")
+	}
+
+	if !allowedCommands[parts[0]] {
+		return "", fmt.Errorf("command not allowed: %s", parts[0])
+	}
+
+	for i, part := range parts {
+		parts[i] = filepath.Clean(part)
+	}
+
+	fmt.Println("Warning: Executing AI-generated command. Please review for safety.")
+	cmd := exec.Command(parts[0], parts[1:]...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("error executing command: %v, output: %s", err, string(output))

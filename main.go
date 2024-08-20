@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -24,6 +26,14 @@ var (
 )
 
 func main() {
+	cobra.OnInitialize(initLogger)
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Printf("Error executing root command: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func initLogger() {
 	logLevel := DefaultLogLevel
 	if debug {
 		logLevel = slog.LevelDebug
@@ -31,8 +41,5 @@ func main() {
 	logger = slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 		Level: logLevel,
 	}))
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+	slog.SetDefault(logger)
 }
