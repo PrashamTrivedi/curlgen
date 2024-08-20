@@ -17,28 +17,35 @@ import (
 )
 
 var (
-	logger         *slog.Logger
-	taskFile       string
-	changedFiles   []string
-	prompt         string
-	model          string
-	key            string
-	anthropicKey   string
-	exampleCall    string
-	apiGatewayJSON string
+	DefaultLogLevel = slog.LevelInfo
+	logger          *slog.Logger
+	taskFile        string
+	changedFiles    []string
+	prompt          string
+	model           string
+	key             string
+	anthropicKey    string
+	exampleCall     string
+	apiGatewayJSON  string
+	executeCurl     bool
+	debug           bool
+	apiKey          string
+	apiURL          string
 )
 
 func init() {
 	rootCmd.Flags().StringVarP(&taskFile, "task", "t", "", "File containing task description or 'pbpaste' for clipboard content")
-	rootCmd.Flags().StringSliceVar(&changedFiles, "files", []string{}, "Files with changes or helpful for code generation, use files a.txt,b.js,c.json way")
+	rootCmd.Flags().StringSliceVarP(&changedFiles, "files", "f", []string{}, "Files with changes or helpful for code generation, use files a.txt,b.js,c.json way")
 	rootCmd.Flags().StringVarP(&prompt, "prompt", "p", "", "Prompt explaining the changes")
 	rootCmd.Flags().StringVarP(&model, "model", "m", "default", "AI model to use")
 	rootCmd.Flags().StringVarP(&exampleCall, "example", "e", "", "File containing example API call (curl command) or 'pbpaste' for clipboard content")
 	rootCmd.Flags().StringVarP(&apiGatewayJSON, "api-gateway", "g", "", "File containing API Gateway JSON schema")
+	rootCmd.Flags().BoolVarP(&executeCurl, "executecurl", "x", false, "Execute curl commands (default is false, only print commands)")
+	rootCmd.Flags().BoolVarP(&debug, "debug", "d", false, "Enable debug logging")
+	rootCmd.Flags().StringVar(&apiKey, "api-key", "", "API Key to replace {{API_KEY}} in the prompt response")
+	rootCmd.Flags().StringVar(&apiURL, "api-url", "", "API URL to replace {{API_URL}} in the prompt response")
 
-	rootCmd.MarkFlagRequired("task")
 	rootCmd.MarkFlagRequired("files")
-	rootCmd.MarkFlagRequired("example")
 	rootCmd.MarkFlagRequired("api-gateway")
 
 	// Allow interspersed flags and positional arguments
@@ -119,14 +126,13 @@ var configCmd = &cobra.Command{
 
 func getTaskContent() string {
 	if taskFile == "" {
-		fmt.Println("Task file is required")
-		os.Exit(1)
+		return ""
 	}
 	if taskFile == "pbpaste" {
 		content, err := getClipboardContent()
 		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
+			fmt.Println("Error reading from clipboard:", err)
+			return ""
 		}
 		return content
 	}
@@ -134,21 +140,20 @@ func getTaskContent() string {
 	content, err := os.ReadFile(taskFile)
 	if err != nil {
 		fmt.Printf("Error reading task file: %v\n", err)
-		os.Exit(1)
+		return ""
 	}
 	return string(content)
 }
 
 func getExampleCallContent() string {
 	if exampleCall == "" {
-		fmt.Println("Example API call is required")
-		os.Exit(1)
+		return ""
 	}
 	if exampleCall == "pbpaste" {
 		content, err := getClipboardContent()
 		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
+			fmt.Println("Error reading from clipboard:", err)
+			return ""
 		}
 		return content
 	}
@@ -156,7 +161,7 @@ func getExampleCallContent() string {
 	content, err := os.ReadFile(exampleCall)
 	if err != nil {
 		fmt.Printf("Error reading example API call file: %v\n", err)
-		os.Exit(1)
+		return ""
 	}
 	return string(content)
 }
@@ -279,7 +284,12 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 		// loop through anthropicResp.Content
 		for _, content := range anthropicResp.Content {
 			if content.Type == "text" {
-				fmt.Println(content.Text)
+				responseText := content.Text
+				if apiKey != "" && apiURL != "" {
+					responseText = strings.ReplaceAll(responseText, "{{API_KEY}}", apiKey)
+					responseText = strings.ReplaceAll(responseText, "{{API_URL}}", apiURL)
+				}
+				fmt.Println(responseText)
 			} else if content.Type == "tool_use" {
 
 				// Input value is an interface, print the type, keys and values of it
@@ -291,11 +301,6 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 				curlCommandJson = strings.ReplaceAll(curlCommandJson, "\n", "")
 				curlCommandJson = strings.ReplaceAll(curlCommandJson, "  ", " ")
 				curlCommandJson = strings.ReplaceAll(curlCommandJson, "\\--", "--")
-				// var toolResponse ToolResponse
-				// preprocessedJSON := strings.ReplaceAll(content.Input["curl_commands"], "\n", "")
-				// preprocessedJSON = strings.ReplaceAll(preprocessedJSON, "\\", "")
-				// // preprocessedJSON = strings.ReplaceAll(preprocessedJSON, "\\\"", "\"")
-				// logger.Debug("Tool Use", "PreprocessedJSON", preprocessedJSON)
 				var toolResponse ToolResponse
 				err := json.Unmarshal([]byte(curlCommandJson), &toolResponse.CurlCommands)
 				if err != nil {
@@ -305,12 +310,14 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 					curlCommands := toolResponse.CurlCommands
 					for _, cmd := range curlCommands {
 						fmt.Printf("=== %s ===\n", cmd.Explanation)
-						fmt.Printf("Executing command: %s\n", cmd.Command)
-						result, err := RunCommand([]string{cmd.Command})
-						if err != nil {
-							fmt.Printf("Error: %s\n", err.Error())
-						} else {
-							fmt.Printf("Result:\n%s\n", result)
+						fmt.Printf("Command: %s\n", cmd.Command)
+						if executeCurl {
+							result, err := RunCommand([]string{cmd.Command})
+							if err != nil {
+								fmt.Printf("Error: %s\n", err.Error())
+							} else {
+								fmt.Printf("Result:\n%s\n", result)
+							}
 						}
 						fmt.Println()
 					}
@@ -384,8 +391,12 @@ func listModels() {
 }
 
 func main() {
+	logLevel := DefaultLogLevel
+	if debug {
+		logLevel = slog.LevelDebug
+	}
 	logger = slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: DefaultLogLevel,
+		Level: logLevel,
 	}))
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
@@ -411,7 +422,6 @@ func handleFunctionCall(responseMessage openai.ChatCompletionMessage, openaiClie
 		functionMessage.Name = executeCurlTool.Function.Name
 
 		if executeCurlTool.Function.Name == "execute_curl" {
-
 			var toolResponse ToolResponse
 			arguments := executeCurlTool.Function.Arguments
 			logger.Debug("OpenAI Arguments", "Arguments", arguments)
@@ -427,12 +437,14 @@ func handleFunctionCall(responseMessage openai.ChatCompletionMessage, openaiClie
 				for _, cmd := range curlCommands {
 					commandToExecute := CleanCommand(cmd.Command)
 					output.WriteString(fmt.Sprintf("=== %s ===\n", cmd.Explanation))
-					output.WriteString(fmt.Sprintf("Executing command: %s\n", commandToExecute))
-					result, err := RunCommand([]string{commandToExecute})
-					if err != nil {
-						output.WriteString(fmt.Sprintf("Error: %s\n", err.Error()))
-					} else {
-						output.WriteString(fmt.Sprintf("Result:\n%s\n", result))
+					output.WriteString(fmt.Sprintf("Command: %s\n", commandToExecute))
+					if executeCurl {
+						result, err := RunCommand([]string{commandToExecute})
+						if err != nil {
+							output.WriteString(fmt.Sprintf("Error: %s\n", err.Error()))
+						} else {
+							output.WriteString(fmt.Sprintf("Result:\n%s\n", result))
+						}
 					}
 					output.WriteString("\n")
 				}
@@ -456,7 +468,12 @@ func handleFunctionCall(responseMessage openai.ChatCompletionMessage, openaiClie
 		}
 		functionMessages = append(functionMessages, afterFuncResponse.Choices[0].Message)
 		functionResponseMessage := afterFuncResponse.Choices[0].Message
-		fmt.Println(functionResponseMessage.Content)
+		responseContent := functionResponseMessage.Content
+		if apiKey != "" && apiURL != "" {
+			responseContent = strings.ReplaceAll(responseContent, "{{API_KEY}}", apiKey)
+			responseContent = strings.ReplaceAll(responseContent, "{{API_URL}}", apiURL)
+		}
+		fmt.Println(responseContent)
 		if functionResponseMessage.FunctionCall != nil && functionResponseMessage.FunctionCall.Name != "" {
 			newFunctionMessages, err := handleFunctionCall(functionResponseMessage, openaiClient, resp, messages, tools)
 			if err != nil {

@@ -85,54 +85,66 @@ func NewPromptGenerator(taskDefinition, updatedCode, apiGatewayJSON, additionalI
 }
 
 func (pg *PromptGenerator) GeneratePrompt() string {
-	var apiModel APIGatewayRequestModel
-	err := json.Unmarshal([]byte(pg.APIGatewayJSON), &apiModel)
-	if err != nil {
-		fmt.Printf("Warning: Failed to parse API Gateway JSON: %v\n", err)
-		fmt.Println("API Gateway JSON:", pg.APIGatewayJSON)
-	}
+	prompt := fmt.Sprintf(`You are an expert API tester. Your task is to generate curl commands for testing an API endpoint based on the following information:
 
-	prompt := fmt.Sprintf(`
+Generate appropriate curl commands for testing the API endpoint based on the following information:
+
 Task Definition:
 %s
+`, pg.TaskDefinition)
 
+	if pg.UpdatedCode != "" {
+		prompt += fmt.Sprintf(`
 Updated Code:
 %s
+`, pg.UpdatedCode)
+	}
 
+	if pg.APIGatewayJSON != "" {
+		var apiModel APIGatewayRequestModel
+		err := json.Unmarshal([]byte(pg.APIGatewayJSON), &apiModel)
+		if err != nil {
+			fmt.Printf("Warning: Failed to parse API Gateway JSON: %v\n", err)
+			fmt.Println("API Gateway JSON:", pg.APIGatewayJSON)
+		}
+		prompt += fmt.Sprintf(`
 API Gateway Request Model:
 %s
+`, pg.APIGatewayJSON)
+	}
 
+	if pg.AdditionalInfo != "" {
+		prompt += fmt.Sprintf(`
 Additional Information:
 %s
+`, pg.AdditionalInfo)
+	}
 
+	if pg.SampleAPICall != "" {
+		prompt += fmt.Sprintf(`
 Sample API Call:
 %s
+`, pg.SampleAPICall)
+	}
 
-Based on the provided information, generate appropriate curl commands for testing the API endpoint. Consider the following:
+	prompt += `
+Consider the following when generating curl commands:
 
-1. Use the API Gateway Request Model to structure the request body.
+1. Use the API Gateway Request Model to structure the request body (if provided).
 2. Incorporate any authentication or headers required by the API.
 3. Include examples for different HTTP methods (GET, POST, PUT, DELETE) if applicable.
 4. Provide variations of the curl commands to test different scenarios or edge cases.
 5. Include any necessary query parameters or path variables.
+6. Use the placeholder {{API_URL}} for the API URL.
+7. Use the placeholder {{API_KEY}} for the API Key in the Authorization header.
 
-Please generate a set of curl commands that thoroughly test the API endpoint described above.
-`, pg.TaskDefinition, pg.UpdatedCode, pg.APIGatewayJSON, pg.AdditionalInfo, pg.SampleAPICall)
+Please generate a set of curl commands that thoroughly test the API endpoint described above, using the placeholders for API URL and API Key.`
 
 	return strings.TrimSpace(prompt)
 }
 
 func (pg *PromptGenerator) GenerateAnthropicPrompt() (string, []Tool) {
 	basePrompt := pg.GeneratePrompt()
-
-	anthropicPrompt := fmt.Sprintf(`
-Human: %s
-
-Assistant: Certainly! I'll analyze the provided information and generate appropriate curl commands for testing the API endpoint. I'll consider the API Gateway Request Model, authentication requirements, different HTTP methods, and various scenarios to create a comprehensive set of test commands.
-
-Here are the curl commands for testing the API endpoint:
-
-`, basePrompt)
 
 	curlTool := CurlTool{
 
@@ -174,19 +186,11 @@ Here are the curl commands for testing the API endpoint:
 		},
 	}
 
-	return strings.TrimSpace(anthropicPrompt), tools
+	return strings.TrimSpace(basePrompt), tools
 }
 
 func (pg *PromptGenerator) GenerateOpenAIPrompt() (string, []openai.Tool) {
 	basePrompt := pg.GeneratePrompt()
-
-	openAIPrompt := fmt.Sprintf(`
-You are an expert API tester. Your task is to generate curl commands for testing an API endpoint based on the following information:
-
-%s
-
-Please provide a set of curl commands that thoroughly test this API endpoint, considering different scenarios, edge cases, and HTTP methods where applicable.
-`, basePrompt)
 
 	params := jsonschema.Definition{
 		Type: jsonschema.Object,
@@ -225,5 +229,5 @@ Please provide a set of curl commands that thoroughly test this API endpoint, co
 		},
 	}
 
-	return strings.TrimSpace(openAIPrompt), tools
+	return strings.TrimSpace(basePrompt), tools
 }

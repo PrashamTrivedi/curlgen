@@ -1,6 +1,6 @@
 module curlgen
 
-go 1.21.12
+go 1.22.0
 
 require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
