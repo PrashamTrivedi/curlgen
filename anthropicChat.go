@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 )
@@ -26,12 +27,11 @@ type Message struct {
 }
 
 type CreateMessageRequest struct {
-	Model       string      `json:"model"`
-	Messages    []Message   `json:"messages"`
-	MaxTokens   int         `json:"max_tokens"`
-	Temperature float64     `json:"temperature,omitempty"`
-	System      string      `json:"system,omitempty"`
-	Tools       interface{} `json:"tools,omitempty"`
+	Model       string    `json:"model"`
+	Messages    []Message `json:"messages"`
+	MaxTokens   int       `json:"max_tokens"`
+	Temperature float64   `json:"temperature,omitempty"`
+	System      string    `json:"system,omitempty"`
 }
 
 type CreateMessageResponse struct {
@@ -46,15 +46,8 @@ type CreateMessageResponse struct {
 }
 
 type Content struct {
-	Type  string            `json:"type"`
-	Text  string            `json:"text"`
-	Id    string            `json:"id"`
-	Name  string            `json:"name"`
-	Input map[string]string `json:"input"`
-}
-
-type AnhropicToolResponse struct {
-	CurlCommands []CurlCommand `json:"curl_commands"`
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 type Usage struct {
@@ -102,12 +95,15 @@ func NewAnthropicClient(anthropicKey string) (*Client, error) {
 }
 
 func (c *Client) CreateMessage(req CreateMessageRequest) (*CreateMessageResponse, error) {
+	// Set JSON response format
+
 	jsonData, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling Anthropic API request: %w", err)
 	}
 
 	url := fmt.Sprintf("%s/messages", c.BaseURL)
+	slog.Debug("Anthropic API request", "url", url, "request", string(jsonData))
 	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("error creating Anthropic API request: %w", err)
@@ -116,6 +112,7 @@ func (c *Client) CreateMessage(req CreateMessageRequest) (*CreateMessageResponse
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", c.APIKey)
 	httpReq.Header.Set("anthropic-version", "2023-06-01")
+
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("error sending Anthropic API request: %w", err)
@@ -128,7 +125,7 @@ func (c *Client) CreateMessage(req CreateMessageRequest) (*CreateMessageResponse
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Anthropic API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("anthropic API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var createResp CreateMessageResponse
@@ -152,5 +149,5 @@ func (c *Client) GetModelByName(name string) (Model, error) {
 			return model, nil
 		}
 	}
-	return Model{}, fmt.Errorf("Anthropic model not found: %s. Please check the model name and try again", name)
+	return Model{}, fmt.Errorf("anthropic model not found: %s. Please check the model name and try again", name)
 }

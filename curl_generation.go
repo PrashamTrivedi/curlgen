@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -19,15 +18,14 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 		return
 	}
 
+	promptContent := promptGen.generatePrompt()
 	var curlCommands []CurlCommand
 
 	switch c := client.(type) {
 	case *openai.Client:
-		promptContent := promptGen.generatePrompt()
 		slog.Debug("Generating curls with OpenAI")
 		curlCommands, err = generateCurlsWithOpenAI(c, promptContent)
 	case *Client:
-		promptContent := promptGen.generatePrompt()
 		slog.Debug("Generating curls with Anthropic")
 		curlCommands, err = generateCurlsWithAnthropic(c, promptContent)
 	default:
@@ -39,6 +37,8 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 		slog.Error("Error generating curl commands", "error", err)
 		return
 	}
+
+	slog.Debug("Generated curl commands", "commands", len(curlCommands))
 
 	for i, cmd := range curlCommands {
 		slog.Debug("Generated curl command", "index", i, "command", cmd.Command)
@@ -59,7 +59,10 @@ func generateCurls(taskContent, filesContent, prompt, model, exampleCallContent,
 				slog.Error("Error executing curl command", "error", err)
 			} else {
 				slog.Debug("Curl command executed successfully", "index", i)
-				fmt.Printf("Output:\n%s\n\n", output)
+				fmt.Printf("Output:\n%s\n%s\n%s\n\n", 
+					strings.Repeat("-", 80),
+					formatOutput(output),
+					strings.Repeat("-", 80))
 			}
 		}
 	}
@@ -76,9 +79,6 @@ func generateCurlsWithOpenAI(client *openai.Client, promptContent string) ([]Cur
 					Content: promptContent,
 				},
 			},
-			ResponseFormat: &openai.ChatCompletionResponseFormat{
-				Type: openai.ChatCompletionResponseFormatTypeJSONObject,
-			},
 		},
 	)
 
@@ -87,20 +87,18 @@ func generateCurlsWithOpenAI(client *openai.Client, promptContent string) ([]Cur
 	}
 
 	slog.Debug("OpenAI response", "response", resp)
-	var toolResponse ToolResponse
-	err = json.Unmarshal([]byte(resp.Choices[0].Message.Content), &toolResponse)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling OpenAI JSON response: %w", err)
-	}
-
-	return toolResponse.CurlCommands, nil
+	return parseCurlCommands(resp.Choices[0].Message.Content)
 }
 
 func generateCurlsWithAnthropic(client *Client, promptContent string) ([]CurlCommand, error) {
+	model, err := client.GetModelByName(model)
+	if err != nil {
+		return nil, fmt.Errorf("error getting model by name: %w", err)
+	}
 	resp, err := client.CreateMessage(CreateMessageRequest{
-		Model:    model,
-		Messages: []Message{{Role: "user", Content: promptContent}},
-		System:   "Respond only with a JSON object containing an array of curl commands.",
+		Model:     model.ApiName,
+		Messages:  []Message{{Role: "user", Content: promptContent}},
+		MaxTokens: 4096,
 	})
 
 	if err != nil {
@@ -108,11 +106,48 @@ func generateCurlsWithAnthropic(client *Client, promptContent string) ([]CurlCom
 	}
 	slog.Debug("Anthropic response", "response", resp)
 
-	var toolResponse ToolResponse
-	err = json.Unmarshal([]byte(resp.Content[0].Text), &toolResponse)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling Anthropic JSON response: %w", err)
+	var content string
+	for _, message := range resp.Content {
+		if message.Type == "text" {
+			content += message.Text
+		}
 	}
 
-	return toolResponse.CurlCommands, nil
+	return parseCurlCommands(content)
+}
+
+func parseCurlCommands(content string) ([]CurlCommand, error) {
+	var curlCommands []CurlCommand
+	lines := strings.Split(content, "\n")
+
+	slog.Debug("Parsing curl commands", "lines", len(lines))
+
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		slog.Debug("Line", "line", line)
+		if strings.Contains(line, ". Command:") {
+			parts := strings.SplitN(line, ". Command:", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			command := strings.TrimSpace(parts[1])
+			slog.Debug("Parsed command", "command", command)
+
+			// Find the explanation
+			explanation := ""
+			for j := i + 1; j < len(lines); j++ {
+				if strings.HasPrefix(lines[j], "Explanation:") {
+					explanation = strings.TrimPrefix(strings.TrimSpace(lines[j]), "Explanation:")
+					break
+				}
+			}
+
+			curlCommands = append(curlCommands, CurlCommand{
+				Command:     command,
+				Explanation: strings.TrimSpace(explanation),
+			})
+		}
+	}
+
+	return curlCommands, nil
 }

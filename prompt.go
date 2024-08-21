@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -19,56 +18,9 @@ type APIGatewayRequestModel struct {
 	Properties map[string]interface{} `json:"properties"`
 }
 
-type Tool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema"`
-}
-
-type CurlTool struct {
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
-	InputSchema CurlToolInputSchema `json:"input_schema"`
-}
-
-type CurlToolInputSchema struct {
-	Type       string                   `json:"type"`
-	Properties CurlToolInputSchemaProps `json:"properties"`
-	Required   []string                 `json:"required"`
-}
-
-type CurlToolInputSchemaProps struct {
-	CurlCommands CurlToolInputSchemaProp `json:"curl_commands"`
-}
-
-type CurlToolInputSchemaProp struct {
-	Type        string                   `json:"type"`
-	Description string                   `json:"description"`
-	Items       CurlToolInputSchemaItems `json:"items"`
-}
-
-type CurlToolInputSchemaItems struct {
-	Type       string                       `json:"type"`
-	Properties CurlToolInputSchemaItemProps `json:"properties"`
-	Required   []string                     `json:"required"`
-}
-
-type CurlToolInputSchemaItemProps struct {
-	Command     CurlToolInputSchemaItemProp `json:"command"`
-	Explanation CurlToolInputSchemaItemProp `json:"explanation"`
-}
-
-type CurlToolInputSchemaItemProp struct {
-	Type        string `json:"type"`
-	Description string `json:"description"`
-}
 type CurlCommand struct {
-	Command     string `json:"command"`
-	Explanation string `json:"explanation"`
-}
-
-type ToolResponse struct {
-	CurlCommands []CurlCommand `json:"curl_commands"`
+	Command     string
+	Explanation string
 }
 
 func newPromptGenerator(taskDefinition, updatedCode, apiGatewayJSON, additionalInfo, sampleAPICall string) *promptGenerator {
@@ -130,8 +82,18 @@ Consider the following when generating curl commands:
 6. Use the placeholder {{API_URL}} for the API URL.
 7. Use the placeholder {{API_KEY}} for the API Key in the Authorization header.
 
-First, generate a set of curl commands that thoroughly test the API endpoint described above, using the placeholders for API URL and API Key.
-Then respond with a JSON object containing an array of curl commands. Each command should be an object with 'command' and 'explanation' fields.`
+Generate a set of curl commands that thoroughly test the API endpoint described above, using the placeholders for API URL and API Key.
+Respond with a list of curl commands and their explanations in the following format:
+
+Here are the updated curl commands and explanations:
+1. Command: <curl_command_1>
+Explanation: <explanation_1>
+2. Command: <curl_command_2>
+Explanation: <explanation_2>
+3. Command: <curl_command_3>
+Explanation: <explanation_3>
+
+Continue this format for all generated curl commands. Ensure that each command starts with a number followed by 'Command:' on a new line, and 'Explanation:' is on a separate line. Do not include any JSON in your response.`
 
 	return strings.TrimSpace(prompt)
 }

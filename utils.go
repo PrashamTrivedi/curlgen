@@ -170,7 +170,15 @@ var allowedCommands = map[string]bool{
 }
 
 func runCommand(command string) (string, error) {
-	parts := strings.Fields(command)
+	commandToRun := strings.TrimSpace(command)
+	commandToRun = strings.TrimPrefix(commandToRun, "```")
+	commandToRun = strings.TrimPrefix(commandToRun, "`")
+	commandToRun = strings.TrimPrefix(commandToRun, "```sh")
+	commandToRun = strings.TrimPrefix(commandToRun, "```shell")
+	commandToRun = strings.TrimSuffix(commandToRun, "```")
+	commandToRun = strings.TrimSuffix(commandToRun, "`")
+	slog.Debug("Command", "CommandToRun", commandToRun)
+	parts := strings.Fields(commandToRun)
 	if len(parts) == 0 {
 		return "", fmt.Errorf("empty command")
 	}
@@ -190,4 +198,15 @@ func runCommand(command string) (string, error) {
 		return "", fmt.Errorf("error executing command: %v, output: %s", err, string(output))
 	}
 	return string(output), nil
+}
+
+func formatOutput(output string) string {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	var formattedOutput strings.Builder
+
+	for _, line := range lines {
+		formattedOutput.WriteString("| " + line + "\n")
+	}
+
+	return formattedOutput.String()
 }
