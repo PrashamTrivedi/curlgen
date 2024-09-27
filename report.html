@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering</title>
+<style>
+body {
+background-color: #181818;
+color: #eee;
+font-family: sans-serif;
+line-height: 1.6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+        color: #ffbd2e;
+    }
+
+    a {
+        color: #2980b9;
+        text-decoration: none;
+    }
+
+    a:hover {
+        text-decoration: underline;
+    }
+
+    p {
+        margin-bottom: 1rem;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 1rem;
+    }
+
+    th, td {
+        padding: 0.5rem;
+        text-align: left;
+        border: 1px solid #333;
+    }
+
+    th {
+        background-color: #222;
+    }
+
+    code {
+        background-color: #222;
+        padding: 0.2rem 0.4rem;
+        border-radius: 3px;
+        font-family: monospace;
+    }
+
+    pre {
+        background-color: #222;
+        padding: 1rem;
+        border-radius: 5px;
+        overflow-x: auto;
+    }
+
+    img {
+        max-width: 100%;
+        height: auto;
+    }
+</style>
+content_copy
+Use code with caution.
+</head>
+<body>
+
+<h1>SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering</h1>
+
+<h2>Authors</h2>
+<p>John Yang<sup>1,2*</sup>, Carlos Jimenez<sup>1,2*</sup>, Alexander Wettig<sup>1,2</sup>, Kilian Lieret<sup>1,2</sup>, Shunyu Yao<sup>1,2</sup>, Karthik Narasimhan<sup>1,2</sup>, Ofir Press<sup>1,2</sup></p>
+
+<p><sup>1</sup>Princeton University <sup>2</sup>Princeton Language and Intelligence</p>
+
+<p><sup>*</sup>Equal contribution. Correspondence to {jy1682,carlosej}@princeton.edu.</p>
+
+<p>Data, code, and leaderboard at <a href="https://swe-agent.com">swe-agent.com</a></p>
+
+<h2>Abstract</h2>
+<p>Language model (LM) agents are increasingly being used to automate complicated tasks in digital environments. Just as humans benefit from powerful software applications, such as integrated development environments, for complex tasks like software engineering, we posit that LM agents represent a new category of end users with their own needs and abilities, and would benefit from specially-built interfaces to the software they use. We investigate how interface design affects the performance of language model agents. As a result of this exploration, we introduce SWE-agent: a system that facilitates LM agents to autonomously use computers to solve software engineering tasks. SWE-agent's custom agent-computer interface (ACI) significantly enhances an agent's ability to create and edit code files, navigate entire repositories, and execute tests and other programs. We evaluate SWE-agent on SWE-bench and HumanEvalFix, achieving state-of-the-art performance on both with a pass@1 rate of 12.5% and 87.7%, respectively, far exceeding the previous state-of-the-art achieved with non-interactive LMs. Finally, we provide insight on how the design of the ACI can impact agents' behavior and performance.</p>
+
+<h2>1 Introduction</h2>
+<p>Recent work has demonstrated the efficacy of LM agents for code generation with execution feedback [39]. However, applying agents to more complex code tasks like software engineering remains unexplored. To solve programming tasks, LM agents are typically designed to use existing applications, such as the Linux shell or Python interpreter [53, 57, 59]. However, to perform more complex programming tasks such as software engineering [20], human engineers benefit from sophisticated applications like VSCode with powerful tools and extensions. Inspired by human-computer interaction (HCI) studies on the efficacy of user interfaces for humans [7], we investigate whether LM agents could similarly benefit from better-designed interfaces for performing software engineering tasks.</p>
+
+<p>Consider the simple setting of an agent interacting directly with a Linux shell [59]. In practice, we find that LM agents can struggle to reliably take actions in this environment. For example, it fails to provide simple commands to edit a small file segment, and does not provide any feedback if the user makes an invalid edit. These deficits substantially hamper performance, motivating the need for an agent-computer interface (ACI), i.e., an abstraction layer between the LM agent and computer, to enhance the LM agent's abilities in computer environments (Figure 1).</p>
+
+<img src="figure1.png" alt="Figure 1: SWE-agent is an LM interacting with a computer through an agent-computer interface (ACI), which includes the commands the agent uses and the format of the feedback from the computer.">
+
+<p>From this effort, we introduce SWE-agent, an agent composed of an LM and ACI, that can interact with a computer to solve challenging real-world software engineering problems, such as those proposed in SWE-bench [20]. In contrast to the Linux Shell's granular, highly configurable action space, SWE-agent's ACI instead offers a small set of simple actions for viewing, searching through and editing files. The ACI uses guardrails to prevent common mistakes, and an agent receives specific, concise feedback about a command's effects at every turn. We show that ACIs tailored specifically for LMs outperform existing user interfaces (UIs) designed for human users, such as the Linux shell. Using GPT-4 Turbo as a base LM, SWE-agent solves 12.47% of the 2,294 SWE-bench test tasks, substantially outperforming the previous best resolve rate of 3.8% by a non-interactive, retrieval augmented system [20]. We perform an ablation study on a subset of 300 SWE-bench test instances (SWE-bench Lite) to analyze our ACI design choices. The results show that SWE-agent solves 10.7 percentage points more instances than the baseline agent, which uses only the default Linux shell. Although our ACI was developed for GPT-4 Turbo, we show that it is portable to a different LM; SWE-agent with Claude 3 Opus can solve 10.5% of the benchmark tasks.</p>
+
+<p>Our contributions are twofold. First, we introduce the concept of the agent-computer interface (ACI) and demonstrate how careful ACI design can substantially improve LM agent performance without modifying the underlying LM's weights. Second, we build, evaluate, and open-source SWE-agent, a system that provides LMs an ACI for solving real-world software engineering tasks. Unlike prior works that independently explore the merits of tool use, prompting techniques, and code execution in interactive settings, our approach unifies these factors within the ACI framework. We show that crafting LM-centric interactive components has meaningful effects on downstream task performance.</p>
+
+<h2>2 The Agent-Computer Interface</h2>
+<p>An LM acts as an agent when it interacts with an environment by iteratively taking actions and receiving feedback [42, 62]. Typically, the environment has hard constraints, as in robotics, where agents control actuators in the physical world. On the other hand, digital environments can be molded by abstractions in the form of application programming interfaces and user interfaces for software and humans respectively. Naturally, existing interfaces have been designed with one of these users in mind. We argue that LM agents represent a new category of end user, with their own needs and abilities. We refer to the interface LM agents use to interact with computers as the agent-computer interface (ACI). Figure 2 illustrates how ACIs provide LM agents with important functionality to interface with computers, similar to how code editors also help humans use computers more effectively.</p>
+
+<img src="figure2.png" alt="Figure 2: Specialized applications like IDEs (e.g., VSCode, PyCharm) make scientists and software engineers more efficient and effective at computer tasks. Similarly, ACI design aims to create a suitable interface that makes LM agents more effective at digital work such as software engineering.">
+
+<p>Disparities in humans' and LMs' abilities and limitations motivates different interface design guidelines. For instance, the current generation of LMs lack the visual understanding abilities to directly operate GUI-based applications with rich visual components and signals. However, many of the features provided by these applications, such as syntax checking and navigation tools, could be useful to LM agents if they were presented in a suitable manner. Additionally, humans can flexibly ignore unnecessary information, whereas all content has a fixed cost in memory and computation for LMs and distracting context can harm performance [27]. Therefore, LM agents may be more effective at interacting with computers when provided an interface that was built informed by these differences.</p>
+
+<p>Ultimately, a well-designed ACI should help the LM agent understand the state of the application given previous changes, manage history to avoid unnecessary context from prior observations, and provide actions that models can use efficiently and reliably. The ACI specifies both the commands available to the LM and how the environment state is communicated back to the LM. It also tracks the history of all previous commands and observations and, at each step, manages how these should be formatted and combined with high-level instructions into a single input for the LM.</p>
+
+<p>In this paper, we assume a fixed LM and focus on designing the ACI to improve its performance. This means that we shape the actions, their documentation, and environment feedback to complement an LM's limitations and abilities. We draw inspiration from the field of HCI, where user studies elicit insights about how compatible different interfaces are with respect to human intuition and performance [7]. We use two approaches to enhance performance on a development set: (1) manually inspect agent behavior to identify difficulties and propose improvements, and (2) run a grid search to select the best ACI configuration.</p>
+
+<p>Taking these two actions resulted in several insights about design principles that seem especially important for building effective ACIs:</p>
+
+<ol>
+<li><strong>Actions should be simple and easy to understand for agents.</strong> Many bash commands have documentation that includes dozens of options. Simple commands with a few options and concise documentation are easier for agents to use, reducing the need for demonstrations or fine-tuning. This is a defining principle for all SWE-agent commands that we describe in Section 3.</li>
+<li><strong>Actions should be compact and efficient.</strong> Important operations (e.g., file navigation, editing) should be consolidated into as few actions as possible. Efficient actions help agents make meaningful progress towards a goal in a single step. A poor design would therefore have many simple actions that must be composed across multiple turns for a higher order operation to take effect. We show this idea in action in the Editing and Search interface analyses in Section 5.1.</li>
+<li><strong>Environment feedback should be informative but concise.</strong> High quality feedback should provide the agent with substantive information about the current environment state (and the effect of the agent's recent actions) without unnecessary details. For instance, when editing a file, updating the agent about revised content is helpful. Figures 3a, 3b and Table 3 show this.</li>
+<li><strong>Guardrails mitigate error propagation and hasten recovery.</strong> Like humans, LMs make mistakes when editing or searching and can struggle to recover from these errors. Building in guardrails, such as a code syntax checker that automatically detects mistakes, can help agents recognize and quickly correct errors. We show the effect of editing guardrails in Table 3.</li>
+</ol>
+
+<p>Analysis and ablation studies in Section 5 demonstrate how alternative ACIs affect LM performance. Our studies show how these principles appear recurrently across actions, feedback, and workflows.</p>
+
+<h2>3 SWE-agent: Designing an ACI for Software Engineering</h2>
+
+<p>Here we describe how SWE-agent provides an ACI for LMs to act as software engineering agents, enabling them to effectively search, navigate, edit, and execute code commands. The ACI comprises several principal components, including search/navigation, file viewer, file editor, and context management. At each step, SWE-agent generates a thought and a command, then incorporates the feedback from the command's execution in the environment (ReAct; Yao et al. [62]). Built atop the Linux shell, SWE-agent also allows access to common Linux commands and utilities when needed.</p>
+
+<h3>Search and navigation</h3>
+<p>Navigating codebases requires finding the relevant file and content. A common strategy to do this involves looking up terms that might be useful, e.g., files, functions, or class definitions mentioned in an issue. We introduce the special commands <code>find_file</code>, <code>search_file</code>, and <code>search_dir</code>, which output a summary of search results when searching for filenames and strings within files or directories. Figure 10 shows examples of these search result formats. The <code>find_file</code> command searches for filenames in the repository, while the <code>search_file</code> and <code>search_dir</code> locates strings in a file(s) of a subdirectory. Our interface encourages efficient searches by suppressing verbose results. The search commands return at most 50 results for each search query; if a search exceeds this number, we do not report the results and instead suggest that the agent write a more specific query.</p>
+
+<h3>File viewer</h3>
+<p>After finding a file they want to view, agents use the interactive file viewer by calling the command <code>open</code> on the relevant file path. The file viewer presents a window of at most 100 lines of the file at a time. The agent can move this window with the commands <code>scroll_down</code> and <code>scroll_up</code> or access a specific line with the <code>goto</code> command. To facilitate in-file navigation and code localization, we display: the full path of the open file, the total number of lines in the file, the number of lines omitted before and after the current window, and the line number (prepended to each visible line). Figure 3a shows an example of this interface.</p>
+
+<img src="figure3a.png" alt="Figure 3a: Observation from the file viewer.">
+
+<h3>File editor</h3>
+<p>We provide a few commands that let LMs create and edit files. The <code>edit</code> command works in conjunction with the file viewer, allowing agents to replace a specific range of lines in the open file. This command takes 3 required arguments: the start line, end line, and replacement text. In a single step, agents can replace all lines between the start and end lines with the replacement text, as shown in Figure 3b. After edits are applied, the file viewer automatically displays the updated content, helping the agent observe the effects of its edit immediately without invoking additional commands. Figure 3b shows an example agent response, including a file edit.</p>
+
+<img src="figure3b.png" alt="Figure 3b: Action using the edit interface.">
+
+<p>Similar to how humans can use tools like syntax highlighting to help them notice format errors when editing files in an IDE, we integrate a code linter into the <code>edit</code> function to alert the agent of mistakes it may have introduced when editing a file. Select errors from the linter are shown to the agent along with a snippet of the file contents before/after the error was introduced. Invalid edits are discarded, and the agent is asked to try editing the file again.</p>
+
+<h3>Context management</h3>
+<p>The SWE-agent system uses informative prompts, error messages, and history processors to keep agent context concise and informative. Agents receive instructions, documentation, and demonstrations on the correct use of bash and ACI commands. At each step, the system instructs them to generate both a thought and an action [62]. Malformed generations trigger an error response, shown in Figure 31, asking the agent to try again, which is repeated until a valid generation is received. Once received, all past error messages except the first are omitted.</p>
+
+<p>The agent's environment responses display computer output using the template shown in Figure 30; however, if no output is generated, a specific message ("Your command ran successfully and did not produce any output") is included to enhance clarity. To further improve context relevance, observations preceding the last 5 are each collapsed into a single line; by removing most content from prior observations, we maintain essential information about the plan and action history while reducing unnecessary context, which allows for more interaction cycles and avoids showing outdated file information. A provides further implementation details.</p>
+
+<h2>4 Experimental Setup</h2>
+<h3>Datasets</h3>
+<p>We primarily evaluate on the SWE-bench dataset, which includes 2,294 task instances from 12 different repositories of popular Python packages [20]. We report our main agent results on the full SWE-bench test set and ablations and analysis on the SWE-bench Lite test set, unless otherwise specified. SWE-bench Lite is a canonical subset of 300 instances from SWE-bench that focus on evaluating self-contained functional bug fixes. We also test SWE-agent's basic code editing abilities with HumanEvalFix, a short-form code debugging benchmark [32].</p>
+
+<h3>Models</h3>
+<p>All results, ablations, and analyses are based on two leading LMs, GPT-4 Turbo (gpt-4-1106-preview) [34] and Claude 3 Opus (claude-3-opus-20240229) [6]. We experimented with a number of additional closed and open source models, including Llama 3 and DeepSeek Coder [14], but found their performance in the agent setting to be subpar. Many LMs' context window is too small, such as Llama 3's context window of 8k. GPT-4 Turbo and Claude 3 Opus have 128k and 200k token context windows, respectively, which provides sufficient room for the LM to interact for several turns after being fed the system prompt, issue description, and optionally, a demonstration.</p>
+
+<h3>Baselines</h3>
+<p>We compare SWE-agent to two baselines. The first setting is the non-interactive, retrieval augmented generation (RAG) baselines established in Jimenez et al. [20]. Here, a BM25 retrieval system retrieves the most relevant codebase files using the issue as the query; given these files, the model is asked to directly generate a patch file that resolves the issue.</p>
+
+<p>The second setting, called Shell-only, is adapted from the interactive coding framework introduced in Yang et al. [59]. Following the InterCode environment, this baseline system asks the LM to resolve the issue by interacting with a shell process on Linux. Like SWE-agent, model prediction is generated automatically based on the final state of the codebase after interaction.</p>
+
+<h3>Metrics</h3>
+<p>We report <code>% Resolved</code> or <code>pass@1</code> as the main metric, which is the proportion of instances for which all tests pass successfully after the model generated patch is applied to the repository [20]. We also report the <code>$ Avg. Cost</code> metric, the API inference cost incurred by SWE-agent averaged over all successfully resolved instances. Due to budget constraints, we set the per-instance budget to $4; if a run exceeded this budget, existing edits were submitted automatically.</p>
+
+<h3>Configuration search</h3>
+<p>During the design process of SWE-agent, we arrived at the final ACI design through qualitative analysis of system behavior on a small set of hand-picked examples from the development split of SWE-bench. For the remaining hyperparameter choices, we performed a sweep over the window size, history processing, and decoding temperature, shown in B.1.</p>
+
+<h2>5 Results</h2>
+
+<p>Across all systems, SWE-agent w/ GPT-4 Turbo achieves the best performance all-around, successfully solving 12.47% (286/2,294) of the full SWE-bench test set and 18.00% (54/300) of the Lite split. As shown in Table 1, compared to RAG on Lite, SWE-agent is 8-13x more costly but yields a 6.7-fold improved <code>% Resolved</code> rate. An LM-friendly ACI's value is confirmed by SWE-agent's 64% relative increase compared to Shell-only, both with GPT-4 Turbo.</p>
+
+<table border="1">
+<caption>Table 1: Main results for SWE-agent performance on the full and Lite splits of the SWE-bench test set. We benchmark models in the SWE-agent, Basic CLI, and Retrieval Augmented Generation (RAG) settings established in SWE-bench [20].</caption>
+<thead>
+<tr>
+<th rowspan="2">Model</th>
+<th colspan="2">SWE-bench</th>
+<th colspan="2">SWE-bench Lite</th>
+</tr>
+<tr>
+<th>% Resolved</th>
+<th>$ Avg. Cost</th>
+<th>% Resolved</th>
+<th>$ Avg. Cost</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td colspan="5">RAG</td>
+</tr>
+<tr>
+<td>w/ GPT-4 Turbo</td>
+<td>1.31</td>
+<td>0.13</td>
+<td>2.67</td>
+<td>0.13</td>
+</tr>
+<tr>
+<td>w/ Claude 3 Opus</td>
+<td>3.79</td>
+<td>0.25</td>
+<td>4.33</td>
+<td>0.25</td>
+</tr>
+<tr>
+<td colspan="5">Shell-only agent</td>
+</tr>
+<tr>
+<td>w/ GPT-4 Turbo</td>
+<td>-</td>
+<td>-</td>
+<td>11.00</td>
+<td>1.46</td>
+</tr>
+<tr>
+<td>w/o Demonstration</td>
+<td>-</td>
+<td>-</td>
+<td>7.33</td>
+<td>0.79</td>
+</tr>
+<tr>
+<td colspan="5">SWE-agent</td>
+</tr>
+<tr>
+<td>w/ GPT-4 Turbo</td>
+<td>12.47</td>
+<td>1.59</td>
+<td>18.00</td>
+<td>1.67</td>
+</tr>
+<tr>
+<td>w/ Claude 3 Opus</td>
+<td>10.46</td>
+<td>2.59</td>
+<td>13.00</td>
+<td>2.18</td>
+</tr>
+</tbody>
+</table>
+
+<p>In Table 2, SWE-agent yields strong performance on HumanEvalFix with 88.3% <code>pass@1</code> rate. Figure 4 reveals that average performance variance is relatively low, but per-instance resolution can change considerably. More results are given in the appendix: B.2 shows that the success rate is uncorrelated to the issue age (controlling for possible test pollution), B.5 presents more details on performance variance and <code>pass@k</code>, and B.7 discusses extra evaluation details.</p>
+
+<table border="1">
+<caption>Table 2: Pass@1 results on HumanEvalFix [32]. Except for SWE-agent, we use scores as reported in Yu et al. [65].</caption>
+<thead>
+<tr>
+<th>Model</th>
+<th>Python</th>
+<th>JS</th>
+<th>Java</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CodeLLaMa-instruct-13B</td>
+<td>29.2</td>
+<td>19.5</td>
+<td>32.3</td>
+</tr>
+<tr>
+<td>GPT-4</td>
+<td>47.0</td>
+<td>48.2</td>
+<td>50.0</td>
+</tr>
+<tr>
+<td>DeepseekCoder-CodeAlpaca-6.7B</td>
+<td>49.4</td>
+<td>51.8</td>
+<td>45.1</td>
+</tr>
+<tr>
+<td>WaveCoder-DS-6.7B</td>
+<td>57.9</td>
+<td>52.4</td>
+<td>57.3</td>
+</tr>
+<tr>
+<td>SWE-agent w/ GPT-4 Turbo</td>
+<td>87.7</td>
+<td>89.7</td>
+<td>87.9</td>
+</tr>
+</tbody>
+</table>
+
+<img src="figure4.png" alt="Figure 4: SWE-agent w/ GPT-4 Turbo Pass@k performance across 6 runs on SWE-bench Lite.">
+
+<h3>5.1 Analysis of ACI Design</h3>
+
+<p>We perform several ablations of the SWE-agent interface, specifically with respect to the SWE-agent w/ GPT-4 configuration, summarized in Table 3. Our case studies shed light on interesting agent behavior along with the impact of different ACI designs.</p>
+
+<table border="1">
+<caption>Table 3: SWE-bench Lite performance under ablations to the SWE-agent interface, which is denoted by û. We consider different approaches to searching and editing (see Figures 5 and 6, respectively). We also verify how varying the file viewer window size affects performance, and we ablate the effect of different context management approaches.</caption>
+<thead>
+<tr>
+<th>Editor</th>
+<th>Search</th>
+<th>File Viewer</th>
+<th>Context</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>edit action</code> 15.0  3.0</td>
+<td><code>Summarized</code> 18.0 û</td>
+<td><code>30 lines</code> 14.3  3.7</td>
+<td><code>Last 5 Obs.</code> 18.0 û</td>
+</tr>
+<tr>
+<td><code>w/ linting</code> 18.0 û</td>
+<td><code>Iterative</code> 12.0  6.0</td>
+<td><code>100 lines</code> 18.0 û</td>
+<td><code>Full history</code> 15.0  3.0</td>
+</tr>
+<tr>
+<td><code>No edit</code> 10.3  7.7</td>
+<td><code>No search</code> 15.7  2.3</td>
+<td><code>Full file</code> 12.7  5.3</td>
+<td><code>w/o demo.</code> 16.3  1.7</td>
+</tr>
+</tbody>
+</table>
+
+<h4>Human user interfaces are not always suitable as agent-computer interfaces</h4>
+<p>Current LMs are vulnerable to a number of pitfalls when searching for relevant content in a Linux shell environment. Some exploration patterns (e.g., chains of <code>cd</code>, <code>ls</code>, <code>cat</code>) are extremely inefficient. <code>grep</code> or <code>find</code> lookups can perform better but occasionally produce many lines of irrelevant results. We hypothesize that better localization is possible with faster navigation and a more informative search interface.</p>
+
+<img src="figure5.png" alt="Figure 5: Three different Search interfaces for task instance pvlib__pvlib-python-1224. In Shell-only, an agent performs localization using only standard bash commands and utilities. Compared to Iterative search, Summarized search shows an exhaustive list of search results and provides guidance on refining under-specified queries.">
+
+<h4>Compact, efficient file editing is critical to performance</h4>
+<p>SWE-agent's file editor and viewer are designed to consolidate the editing process into a single command that enables easy multi-line edits with consistent feedback and automatically updates the agent's view of the file after editing. In the <code>No edit</code> setting, editing options are restrictive and prone to errors; the primary methods available are either replacing entire files through redirection and overwriting or using utilities like <code>sed</code> for single-line or search-and-replace edits. Both methods have significant drawbacks. Redirection involves copying and rewriting entire files for even minor changes, which is both inefficient and error-prone. Although <code>sed</code> can facilitate specific edits, executing multi-line edits is cumbersome and can lead to unintended consequences that are challenging to detect. Moreover, both strategies lack immediate feedback about file updates, making these silent operations potentially confusing for models to interpret and increasing the risk of errors. Without SWE-agent's file editor interface, performance drops to (10.3%  7.7). We also find that agents are sensitive to the number of lines the file viewer displays. Either too little content (30 lines, 14.3%  3.7) or too much (entire file, 12.7%  5.3) lowers performance.</p>
+
+<img src="figure6.png" alt="Figure 6: Three different Edit interfaces for task instance sympy__sympy-24102. Editing with bash commands requires several actions to successfully modify a file. The Editing component defines an edit command that leverages the File Viewer component to replace the bash style of editing workflow with a single command. Linting is beneficial for stymieing cascading errors that often start with an error-introducing edit by the agent.">
+
+<h4>Guardrails can improve error recovery</h4>
+<p>A prominent failure mode occurs when models repeatedly edit the same code snippet. The usual suspect for this behavior is an agent introducing a syntax error (e.g., incorrect indentation, extra parenthesis) via an errant edit. As discussed in Section 3, we add an intervention to the <code>edit</code> logic that lets a modification apply only if it does not produce major errors. We compare this interface with the <code>No edit</code> and <code>edit w/o linting</code> alternatives in Figure 6. This intervention improves performance considerably (without linting, 15.0%  3.0).</p>
+
+<h3>5.2 Analysis of Agent Behavior</h3>
+<p>Recurring problem-solving patterns emerge when LMs are equipped with a useful, intuitive ACI. We describe several model behaviors and problem-solving patterns that can be discerned from model performance and each model's corresponding trajectories.</p>
+
+<h4>Reproduction and/or localization is the first step</h4>
+<p>SWE-agent usually begins with either writing reproduction code and/or localizing the issue's cause to specific lines of code. As shown in Figure 7, all trajectories begin with either <code>create</code> (reproduction) or <code>find_file</code>/<code>search_dir</code> (localization). To reproduce, models will create a new file, add reproduction code to it with an <code>edit</code>, then run with <code>python</code>; this is the most popular triple of actions in Table 8. Using this feedback along with file names and symbols in the issue description, an agent will start with a broad, directory-level keyword search, before then zooming into specific files and lines. This is reflected in Figure 22, where the most likely actions following localization sequences like (<code>python</code>, <code>find_file</code>) and (<code>search_dir</code>, <code>open</code>) are <code>search_file</code> and <code>goto</code>, indicative of how an agent "zooms in" on a bug. Extensive analysis on correlations between different groups of actions are discussed in B.3.3</p>
+
+<img src="figure7.png" alt="Figure 7: The frequency with which actions are invoked at each turn by SWE-agent w/ GPT-4 for task instances that it solved on the SWE-bench full test set (286 trajectories).">
+
+<h4>Remaining turns are mostly "edit, then execute" loops</h4>
+<p>As exhibited in Figure 7, from turn 5 onwards, the most frequent two actions for all turns are <code>edit</code> and <code>python</code>. Captured as high probability next actions following (<code>edit</code>, <code>python</code>) in Figure 22, additional localization operations are often interspersed across these later turns, where agents might look at more in-file code with <code>search_file</code>, <code>scroll_up</code>/<code>down</code>, or other files altogether with <code>search_dir</code>, <code>find_file</code>. This behavior usually arises in response to new information from re-running the reproduction script. Submissions are distributed normally from turn 10 onwards, although resolved task instances correlate more with earlier submits (see B.3.1). A walk-through of common trajectory phases is in B.3.2.</p>
+
+<h4>Editing remains challenging for agents</h4>
+<p>A non-trivial minority of <code>edit</code> actions raise a linting error; out of 2,294 task instances, 1,185 (51.7%) of SWE-agent w/ GPT-4 Turbo trajectories have 1+ failed edits. While agents generally recover more often than not from failed edits, the odds of recovery decrease as the agent accumulates more failed edits. Recovery refers to a sequence of consecutive failed edits followed immediately by a successful edit. Any attempt at editing has a 90.5% chance of eventually being successful. This probability drops off to 57.2% after a single failed edit. More editing phenomena are discussed in B.3.3, and data about agents' generated fixes are in B.6.</p>
+
+<h4>Agents succeed quickly and fail slowly</h4>
+<p>We find that runs submitted relatively early are much more likely to be successful compared to those submitted after a larger number of steps or cost. We show in Table 15 the distribution of resolved and unresolved instances, including only instances that did not exhaust their budget. We observe that successful runs complete earlier and at a cheaper cost than unsuccessful ones. In general, successful instances solved by SWE-agent w/ GPT 4 finish with a median cost of $1.21 and 12 steps compared to a mean of $2.52 and 21 steps for unsuccessful ones. Furthermore, we find that 93.0% of resolved instances are submitted before exhausting their cost budget, compared to 69.0% of instances overall. For these reasons, we suspect that increasing the maximum budget or token limit are unlikely to substantially increase performance. More statistics about how trajectories typically conclude are in B.9.</p>
+
+<h4>Most failures are incorrect implementations</h4>
+<p>We use GPT-4o to automatically categorize unresolved trajectories (SWE-agent w/ GPT-4 Turbo on SWE-bench Lite, n =248) into one of 9 manually defined categories described in Table 9. On a hand-labeled validation set, the LM's judgment agrees with the authors' on 87% of instances. From Figure 8, about half (52.0%) of unresolved instances fall into the <code>Incorrect Implementation</code> or <code>Overly Specific Implementation</code> categories, suggesting that agents' proposed solutions often simply fail to functionally address the issue or are insufficiently general solutions. Cascading failed edits make up another 23.4% of failures. More details in B.4.</p>
+
+<img src="figure8.png" alt="Figure 8: Failure mode distribution for SWE-agent w/ GPT-4 Turbo trajectories of unresolved instances. Each instance is labeled automatically using an LM with the categories from Table 9.">
+
+<h2>6 Related Work</h2>
+
+<h3>6.1 Software Engineering Benchmarks</h3>
+<p>Code generation benchmarks, which evaluate models on the task of synthesizing code from natural language descriptions, have served as a long-standing bellwether for measuring LM performance [5, 1, 15, 30]. Subsequent works have built upon the code generation task formulation to contribute new benchmarks that translate problems to different (programming) languages [3, 49], incorporate third-party libraries [25, 29], introduce derivative code completion tasks [18, 32], increase test coverage [26], change the edit scope [8, 9, 64], and add robustness to dataset contamination [19]. Code generation problems are largely self-contained, with short problem descriptions (~100 lines) and corresponding solutions that are similarly brief, requiring nothing more complex than basic language primitives. Tests are either handwritten or generated synthetically via fuzz testing. In recent months, the rapid development of LMs has begun to saturate many of these benchmarks. For instance, the top method solves 94.4% of HumanEval [70].</p>
+
+<p>Gauging future trends with the code generation task paradigm can be limited by the simplicity of this setting and cost of human-in-the-loop problem creation. In response, recent efforts have demonstrated that software engineering (SE) can serve as a diverse, challenging testbed for LM evaluation [68, 20, 28]. Repository-level code editing introduces many reasoning challenges grounded in real SE subtasks, such as spotting errant code and identifying cross-file relationships and understanding codebase-specific symbols and conventions. As a field, SE has generally studied tasks in a more isolated manner; prior benchmarks tended to frame problems in isolation from the rest of a codebase [21, 23]. We use SWE-bench because it unites many separate SE tasks, such as automated program repair [10,
+
