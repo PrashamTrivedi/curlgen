@@ -92,7 +92,7 @@ if (import.meta.main) {
     const filesContent = getFiles(files)
     const examplesContent = getExamplesFile(examples)
     if (globalThis.isVerbose) {
-      console.log({taskContent, files, filesContent, examplesContent})
+      console.log({taskContent, files, filesContent, examplesContent, executeCommands})
     }
     if (!taskContent || !filesContent) {
       console.error("Task and files are required")
@@ -144,11 +144,11 @@ async function generateCurls(model: string, taskContent: string,
       console.log({client: "openai"})
     }
     // Generate curls with OpenAI client
-    await generateCurlsWithOpenAI(client, modelName, prompt, apiKey, endpoint, executeCommands)
+    await generateCurlsWithOpenAI(client, modelName, prompt, apiKey, endpoint, executeCommands ?? true)
     // console.log({curlCommands})
   } else if (client instanceof Anthropic) {
     // Generate curls with Anthropic client
-    await generateCurlsWithAnthropic(client, modelName, prompt, apiKey, endpoint, executeCommands)
+    await generateCurlsWithAnthropic(client, modelName, prompt, apiKey, endpoint, executeCommands ?? true)
 
   } else {
     throw new Error("Unsupported client type")
@@ -157,7 +157,7 @@ async function generateCurls(model: string, taskContent: string,
 
 }
 
-async function generateCurlsWithAnthropic(client: Anthropic, model: string, prompt: string, apiKey: string, endpoint: string) {
+async function generateCurlsWithAnthropic(client: Anthropic, model: string, prompt: string, apiKey: string, endpoint: string, executeCommands: boolean) {
 
   const messageParams: MessageCreateParamsBase = {
     max_tokens: 1024,
@@ -211,7 +211,7 @@ async function generateCurlsWithAnthropic(client: Anthropic, model: string, prom
     } else if (message.type === "tool_use") {
       const commands = message.input ? message.input['commands'] as Array<{command: string, explanation: string}> : []
 
-      const response = await runCurlsAndReturnResult(commands.map(command => command.command), endpoint, apiKey)
+      const response = await runCurlsAndReturnResult(commands.map(command => command.command), endpoint, apiKey, executeCommands)
       if (globalThis.isVerbose) {
 
         console.log({response})
