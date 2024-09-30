@@ -339,7 +339,7 @@ async function generateCurlsWithOpenAI(client: OpenAI, model: string, taskConten
 
           const response = await runCurlsAndReturnResult(toolCall.arguments.commands.
             map(cmd => ({
-              command: cmd.command, expected_success: cmd.expected_result
+              command: cmd.command, expected_success: cmd.expected_success
             })), endpoint, apiKey, executeCommands)
           const id = toolCall.id
           if (globalThis.isVerbose) {
@@ -407,37 +407,42 @@ async function runCurlsAndReturnResult(curlCommands: Array<{command: string, exp
     }
     console.log(`Running: ${commandWithoutFirstWord}`)
     if (!executeCommands) {
-      result = curlCommand
+      result = commandWithoutFirstWord
+      successfulCurls.push(commandWithoutFirstWord)
       results.push(result)
     } else {
       try {
         const command = new Deno.Command('sh', {
-          args: ['-c', commandWithoutFirstWord]
+          args: ['-c', `${commandWithoutFirstWord} -w "%{http_code}"`]
         })
         const {code, stdout, stderr} = await command.output()
         const error = new TextDecoder().decode(stderr)
         const output = new TextDecoder().decode(stdout)
 
-        const actual_success = (code === 0)
-        if (actual_success === expected_success) {
-          successfulCurls.push(curlCommand)
-        } else {
-          failedCurls.push(curlCommand)
-        }
+        // Extract HTTP status code from the output
+        const httpStatusCode = parseInt(output.slice(-3))
+        const responseBody = output.slice(0, -3)
 
-        if (actual_success) {
-          result = `The curl command: ${curlCommand} returned the following output: ${output}`
-          if (globalThis.isVerbose) {
-            console.log({result})
-          }
+        const actual_success = code === 0 && (httpStatusCode >= 200 && httpStatusCode < 400)
+        if (actual_success === expected_success) {
+          successfulCurls.push(commandWithoutFirstWord)
         } else {
-          result = `The curl command: ${curlCommand} returned the following error: ${error}`
-          console.error(`Error running curl command: ${curlCommand} and the following error: ${error}`)
+          failedCurls.push({
+            command: commandWithoutFirstWord,
+            reason: `Expected success: ${expected_success}, http code:${httpStatusCode}, Actual success: ${actual_success}`
+          })
+        }
+        result = `The curl command: ${commandWithoutFirstWord} returned HTTP status ${httpStatusCode} with the following output: ${responseBody}`
+        if (globalThis.isVerbose) {
+          console.log({result})
         }
       } catch (error) {
-        result = `Failed to execute curl command: ${curlCommand}. Error: ${error.message}`
+        result = `Failed to execute curl command: ${commandWithoutFirstWord}. Error: ${error.message}`
         console.error(result)
-        failedCurls.push(curlCommand)
+        failedCurls.push({
+          command: commandWithoutFirstWord,
+          reason: `Execution failed: ${error.message}`
+        })
       }
       results.push(result)
     }
@@ -452,8 +457,9 @@ function printCurlResults() {
   })
 
   console.log("\nFailed curls (did not meet expectations):")
-  failedCurls.forEach((curl, index) => {
-    console.log(`${index + 1}. ${curl}`)
+  failedCurls.forEach((failedCurl, index) => {
+    console.log(`${index + 1}. ${failedCurl.command}`)
+    console.log(`   Reason: ${failedCurl.reason}`)
   })
 }
 
