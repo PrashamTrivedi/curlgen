@@ -20,8 +20,9 @@ Consider the following when generating curl commands:
 5. Include any necessary query parameters or path variables.
 6. Use the placeholder {{API_URL}} for the API URL.
 7. Use the placeholder {{API_KEY}} for the API Key or Authorization Header if the curl requires login.
+8. For each curl command, include a boolean field 'expected_success' indicating whether the command is expected to succeed (true) or fail (false).
 
-Generate and run a set of curl commands that thoroughly test the API endpoint described above, using the placeholders for API URL and API Key.`
+Generate and run a set of curl commands that thoroughly test the API endpoint described above, using the placeholders for API URL and API Key. Include the 'expected_success' field for each command.`
 
 
 export function generatePrompt(taskContent: string, filesContent: string, examplesContent: string,
@@ -41,9 +42,18 @@ export function generatePrompt(taskContent: string, filesContent: string, exampl
 
 
 export function generateCurl(command: string, endpoint: string, apiKey: string): string {
+    if (!command) {
+        console.error("Error: Empty command string provided to generateCurl");
+        return "";
+    }
     const curlTemplate = new Template()
-    return curlTemplate.render(command, {
-        API_URL: endpoint,
-        API_KEY: apiKey
-    })
+    try {
+        return curlTemplate.render(command, {
+            API_URL: endpoint,
+            API_KEY: apiKey
+        });
+    } catch (error) {
+        console.error("Error in generateCurl:", error);
+        return command; // Return the original command if rendering fails
+    }
 }

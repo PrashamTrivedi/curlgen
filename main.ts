@@ -11,6 +11,9 @@ import {ChatCompletionCreateParamsBase} from "openai/resources/chat/completions.
 import {ChatCompletion} from "openai/resources/mod.ts"
 import {MessageCreateParamsBase} from "npm:@anthropic-ai/sdk"
 
+const successfulCurls: string[] = []
+const failedCurls: string[] = []
+
 
 
 declare global {
@@ -44,12 +47,7 @@ if (import.meta.main) {
         variables: false,
       }
 
-      // At the end of the function, print both successful and failed curls
-      console.log("\nSuccessful curls (commands that met expectations):");
-      successfulCurls.forEach(cmd => console.log(cmd));
 
-      console.log("\nFailed curls (commands that did NOT meet expectations):");
-      failedCurls.forEach(cmd => console.log(cmd));
     }
   )
 
@@ -69,9 +67,6 @@ if (import.meta.main) {
     console.log(flags)
   }
 
-  if (globalThis.isVariables) {
-    console.log({ taskContent, files, filesContent, examplesContent, executeCommands })
-  }
 
   if (subcommand === "help" || flags.help) {
     const subSubCommand = flags._[1] as string
@@ -121,6 +116,8 @@ if (import.meta.main) {
     await generateCurls(model, taskContent, filesContent,
       apiGatewaySchema, apiKey, endpoint, examplesContent, requiresLogin, executeCommands)
 
+    // Add this line to print the results
+    printCurlResults()
   }
   Deno.exit(0)
 
@@ -163,7 +160,7 @@ async function generateCurls(model: string, taskContent: string,
     examplesContent ?? "", apiGatewaySchema, requiresLogin ?? false)
   if (client instanceof OpenAI) {
     if (globalThis.isPrompts) {
-      console.log("Sending prompt to OpenAI:", prompt);
+      console.log("Sending prompt to OpenAI:", prompt)
     }
     if (globalThis.isVerbose) {
       console.log({client: "openai"})
@@ -211,9 +208,13 @@ async function generateCurlsWithAnthropic(client: Anthropic, model: string, prom
                   explanation: {
                     type: "string",
                     description: "Explanation of the curl command"
+                  },
+                  expected_success: {
+                    type: "boolean",
+                    description: "Whether the command is expected to succeed (true) or fail (false)"
                   }
                 },
-                required: ["command", "explanation"]
+                required: ["command", "explanation", "expected_success"]
               }
             }
           },
@@ -234,9 +235,10 @@ async function generateCurlsWithAnthropic(client: Anthropic, model: string, prom
     if (message.type === "text") {
       console.log(message.text)
     } else if (message.type === "tool_use") {
-      const commands = message.input ? message.input['commands'] as Array<{command: string, explanation: string}> : []
+      const commands = message.input ? message.input['commands'] as Array<{command: string, explanation: string, expected_success: false}> : []
 
-      const response = await runCurlsAndReturnResult(commands.map(command => command.command), endpoint, apiKey, executeCommands)
+      const transformedCommands = commands.map(cmd => ({command: cmd.command, expected_success: cmd.expected_success}))
+      const response = await runCurlsAndReturnResult(transformedCommands, endpoint, apiKey, executeCommands)
       if (globalThis.isVerbose) {
 
         console.log({response})
@@ -299,9 +301,13 @@ async function generateCurlsWithOpenAI(client: OpenAI, model: string, taskConten
                     explanation: {
                       type: "string",
                       description: "Explanation of the curl command"
+                    },
+                    expected_success: {
+                      type: "boolean",
+                      description: "Whether the command is expected to succeed (true) or fail (false)"
                     }
                   },
-                  required: ["command", "explanation"]
+                  required: ["command", "explanation", "expected_success"]
                 }
               }
             },
@@ -327,17 +333,20 @@ async function generateCurlsWithOpenAI(client: OpenAI, model: string, taskConten
         functionName: toolCall.function.name,
         arguments: JSON.parse(toolCall.function.arguments)
       }))
+      chatParams.messages.push(curlCommands.choices[0].message)
       for (const toolCall of extractedToolCalls) {
         if (toolCall.functionName === "generateCurlCommands") {
 
           const response = await runCurlsAndReturnResult(toolCall.arguments.commands.
-            map(cmd => cmd.command), endpoint, apiKey, executeCommands)
+            map(cmd => ({
+              command: cmd.command, expected_success: cmd.expected_result
+            })), endpoint, apiKey, executeCommands)
           const id = toolCall.id
           if (globalThis.isVerbose) {
 
             console.log({response})
           }
-          chatParams.messages.push(curlCommands.choices[0].message)
+
           chatParams.messages.push({
             role: "tool",
             tool_call_id: id,
@@ -347,17 +356,17 @@ async function generateCurlsWithOpenAI(client: OpenAI, model: string, taskConten
 
 
         }
-        if (globalThis.isVerbose) {
-          console.log({chatParams})
-        }
-        const functionResponse = await sendToOpenAi(model, chatParams, taskContent, client)
-        if (functionResponse.choices[0].finish_reason === "stop") {
-          console.log(`The curl commands have been generated successfully`)
-          console.log(functionResponse.choices[0].message.content)
-        }
-        if (globalThis.isVerbose) {
-          console.log({extractedToolCalls})
-        }
+      }
+      if (globalThis.isVerbose) {
+        console.log({chatParams})
+      }
+      const functionResponse = await sendToOpenAi(model, chatParams, taskContent, client)
+      if (functionResponse.choices[0].finish_reason === "stop") {
+        console.log(`The curl commands have been generated successfully`)
+        console.log(functionResponse.choices[0].message.content)
+      }
+      if (globalThis.isVerbose) {
+        console.log({extractedToolCalls})
       }
     }
   }
@@ -380,15 +389,19 @@ async function sendToOpenAi(model: string, chatParams: ChatCompletionCreateParam
   return curlCommands
 }
 
-async function runCurlsAndReturnResult(curlCommands: string[], endpoint: string, apiKey: string, executeCommands: boolean) {
+async function runCurlsAndReturnResult(curlCommands: Array<{command: string, expected_success: boolean}>, endpoint: string, apiKey: string, executeCommands: boolean) {
   const results = []
   if (globalThis.isVerbose) {
     console.log({curlCommands, endpoint, apiKey, executeCommands})
   }
   for (const curlCommandObj of curlCommands) {
-    const { command: curlCommand, expected_success } = curlCommandObj;
+    const {command: curlCommand, expected_success} = curlCommandObj
     let result = ``
     const commandWithoutFirstWord = generateCurl(curlCommand, endpoint, apiKey)
+    if (!commandWithoutFirstWord) {
+      console.error(`Failed to generate curl command for: ${curlCommand}`)
+      continue
+    }
     if (globalThis.isVerbose) {
       console.log({commandWithoutFirstWord})
     }
@@ -397,38 +410,51 @@ async function runCurlsAndReturnResult(curlCommands: string[], endpoint: string,
       result = curlCommand
       results.push(result)
     } else {
-      if (globalThis.isPrompts) {
-        console.log("Prompt:", prompt);
-      }
-      const command = new Deno.Command('sh', {
-        args: ['-c', commandWithoutFirstWord]
-      })
-      const {code, stdout, stderr} = await command.output()
-      const error = new TextDecoder().decode(stderr)
-      const output = new TextDecoder().decode(stdout)
+      try {
+        const command = new Deno.Command('sh', {
+          args: ['-c', commandWithoutFirstWord]
+        })
+        const {code, stdout, stderr} = await command.output()
+        const error = new TextDecoder().decode(stderr)
+        const output = new TextDecoder().decode(stdout)
 
-      const actual_success = (code === 0);
-      if (actual_success === expected_success) {
-        successfulCurls.push(curlCommand);
-      } else {
-        failedCurls.push(curlCommand);
-      }
-
-      if (actual_success) {
-
-        result =
-          `The curl command: ${curlCommand} returned the following output: ${output}`
-        if (globalThis.isVerbose) {
-          console.log({result})
+        const actual_success = (code === 0)
+        if (actual_success === expected_success) {
+          successfulCurls.push(curlCommand)
+        } else {
+          failedCurls.push(curlCommand)
         }
-      } else {
-        result = `The curl command: ${curlCommand} returned the following error: ${error}`
-        console.error(`Error running curl command: ${curlCommand} and the following error: ${error}`)
+
+        if (actual_success) {
+          result = `The curl command: ${curlCommand} returned the following output: ${output}`
+          if (globalThis.isVerbose) {
+            console.log({result})
+          }
+        } else {
+          result = `The curl command: ${curlCommand} returned the following error: ${error}`
+          console.error(`Error running curl command: ${curlCommand} and the following error: ${error}`)
+        }
+      } catch (error) {
+        result = `Failed to execute curl command: ${curlCommand}. Error: ${error.message}`
+        console.error(result)
+        failedCurls.push(curlCommand)
       }
       results.push(result)
     }
   }
   return results
+}
+
+function printCurlResults() {
+  console.log("\nSuccessful curls (met expectations):")
+  successfulCurls.forEach((curl, index) => {
+    console.log(`${index + 1}. ${curl}`)
+  })
+
+  console.log("\nFailed curls (did not meet expectations):")
+  failedCurls.forEach((curl, index) => {
+    console.log(`${index + 1}. ${curl}`)
+  })
 }
 
 
