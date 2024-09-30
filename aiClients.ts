@@ -19,7 +19,7 @@ function initClients() {
             throw new Error("API keys are missing or invalid")
         }
 
-        if (globalThis.isVerbose) {
+        if (globalThis.isVariables) {
             console.log({openai: maskKey(openAiKey), anthropic: maskKey(anthropicKey)})
         }
         openAiClient = new OpenAI({

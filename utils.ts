@@ -53,7 +53,7 @@ export function getFiles(files: string[]) {
     const filesContent = []
     for (const file of files) {
         const readPermission = Deno.permissions.querySync({name: "read", path: file})
-        if (globalThis.isVerbose) {
+        if (globalThis.isVariables) {
             console.log({file, readPermission})
         }
         if (readPermission.state === 'prompt') {
@@ -64,7 +64,7 @@ export function getFiles(files: string[]) {
             if (readRequest.state === 'granted') {
                 const stat = Deno.statSync(file)
                 const fileContent = Deno.readTextFileSync(file)
-                if (globalThis.isVerbose) {
+                if (globalThis.isVariables) {
                     console.log({fileContent, stat})
                 }
                 const fileName = file
@@ -76,7 +76,7 @@ export function getFiles(files: string[]) {
         } else if (readPermission.state === 'granted') {
             const stat = Deno.statSync(file)
             const fileContent = Deno.readTextFileSync(file)
-            if (globalThis.isVerbose) {
+            if (globalThis.isVariables) {
                 console.log({fileContent, stat})
             }
             const fileName = file

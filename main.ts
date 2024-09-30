@@ -19,10 +19,12 @@ declare global {
 if (import.meta.main) {
   const flags = parseArgs(Deno.args,
     {
-      boolean: ["help", "verbose", "requiresLogin", "executeCommands"],
+      boolean: ["help", "verbose", "requiresLogin", "executeCommands", "prompts", "variables"],
       alias: {
         help: "h",
         verbose: "v",
+        prompts: "p",
+        variables: "d",
         model: "m",
         task: "t",
         files: "f",
@@ -38,7 +40,16 @@ if (import.meta.main) {
       ],
       default: {
         verbose: false,
+        prompts: false,
+        variables: false,
       }
+
+      // At the end of the function, print both successful and failed curls
+      console.log("\nSuccessful curls (commands that met expectations):");
+      successfulCurls.forEach(cmd => console.log(cmd));
+
+      console.log("\nFailed curls (commands that did NOT meet expectations):");
+      failedCurls.forEach(cmd => console.log(cmd));
     }
   )
 
@@ -46,11 +57,20 @@ if (import.meta.main) {
   const subcommand = flags._[0]
 
   const isVerbose = flags.verbose || flags.v
+  const isPrompts = flags.prompts || flags.p || isVerbose
+  const isVariables = flags.variables || flags.d || isVerbose
+
   globalThis.isVerbose = isVerbose
+  globalThis.isPrompts = isPrompts
+  globalThis.isVariables = isVariables
 
   if (globalThis.isVerbose) {
 
     console.log(flags)
+  }
+
+  if (globalThis.isVariables) {
+    console.log({ taskContent, files, filesContent, examplesContent, executeCommands })
   }
 
   if (subcommand === "help" || flags.help) {
@@ -118,6 +138,8 @@ export function mainHelp() {
   Options:
     --help, -h                Show help
     --verbose, -v             Enable verbose mode
+    --prompts, -p             Print prompts sent and responses received
+    --variables, -d           Print variables logs (console.log({...}))
     --model, -m <model>       Specify the model to use (required)
     --task, -t <file>         Specify the task file
     --files, -f <files>       Specify the files to include (required)
@@ -140,6 +162,9 @@ async function generateCurls(model: string, taskContent: string,
   const prompt = generatePrompt(taskContent, filescontent,
     examplesContent ?? "", apiGatewaySchema, requiresLogin ?? false)
   if (client instanceof OpenAI) {
+    if (globalThis.isPrompts) {
+      console.log("Sending prompt to OpenAI:", prompt);
+    }
     if (globalThis.isVerbose) {
       console.log({client: "openai"})
     }
@@ -360,7 +385,8 @@ async function runCurlsAndReturnResult(curlCommands: string[], endpoint: string,
   if (globalThis.isVerbose) {
     console.log({curlCommands, endpoint, apiKey, executeCommands})
   }
-  for (const curlCommand of curlCommands) {
+  for (const curlCommandObj of curlCommands) {
+    const { command: curlCommand, expected_success } = curlCommandObj;
     let result = ``
     const commandWithoutFirstWord = generateCurl(curlCommand, endpoint, apiKey)
     if (globalThis.isVerbose) {
@@ -371,6 +397,9 @@ async function runCurlsAndReturnResult(curlCommands: string[], endpoint: string,
       result = curlCommand
       results.push(result)
     } else {
+      if (globalThis.isPrompts) {
+        console.log("Prompt:", prompt);
+      }
       const command = new Deno.Command('sh', {
         args: ['-c', commandWithoutFirstWord]
       })
@@ -378,7 +407,14 @@ async function runCurlsAndReturnResult(curlCommands: string[], endpoint: string,
       const error = new TextDecoder().decode(stderr)
       const output = new TextDecoder().decode(stdout)
 
-      if (code === 0) {
+      const actual_success = (code === 0);
+      if (actual_success === expected_success) {
+        successfulCurls.push(curlCommand);
+      } else {
+        failedCurls.push(curlCommand);
+      }
+
+      if (actual_success) {
 
         result =
           `The curl command: ${curlCommand} returned the following output: ${output}`
