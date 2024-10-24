@@ -38,8 +38,14 @@ function initClients() {
 }
 
 const anthropicModels = [{
-    ApiName: "claude-3-5-sonnet-20240620",
+    ApiName: "claude-3-5-sonnet-20241022",
     Name: "claude-3.5-sonnet",
+}, {
+    ApiName: "claude-3-5-sonnet-20240620",
+    Name: "claude-3.5-sonnet-legacy",
+}, {
+    ApiName: "claude-3-5-sonnet-latest",
+    Name: "claude-3.5-sonnet-latest",
 },
 {
     ApiName: "claude-3-opus-20240229",
@@ -70,19 +76,24 @@ export async function listModels() {
 }
 
 async function initModelToClientMap() {
-    const openAiModels = await openAiClient.models.list()
-    openAiModels.data.forEach((model: Model) => {
-        modelToClientMap[model.id] = openAiClient
+
+    const openAiModels = await openAiClient?.models?.list()
+    openAiModels?.data?.forEach((model: Model) => {
+        if (openAiClient) {
+            modelToClientMap[model.id] = openAiClient
+        }
     })
     anthropicModels.forEach((model: {ApiName: string; Name: string}) => {
-        modelToClientMap[model.Name] = anthropicClient
-        modelToClientMap[model.ApiName] = anthropicClient
+        if (anthropicClient) {
+            modelToClientMap[model.Name] = anthropicClient
+            modelToClientMap[model.ApiName] = anthropicClient
+        }
     })
     return openAiModels
 }
 
 
-export async function determineClient(modelName: string): {modelName: string, client: OpenAI | Anthropic} {
+export async function determineClient(modelName: string): Promise<{modelName: string, client: OpenAI | Anthropic}> {
     initClients()
     if (!Object.keys(modelToClientMap).length) {
         await initModelToClientMap()

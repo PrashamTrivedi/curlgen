@@ -9,15 +9,21 @@ import {generateCurl, generatePrompt} from "./prompt.ts"
 import Anthropic from "npm:@anthropic-ai/sdk"
 import {ChatCompletionCreateParamsBase} from "openai/resources/chat/completions.ts"
 import {ChatCompletion} from "openai/resources/mod.ts"
-import {MessageCreateParamsBase} from "npm:@anthropic-ai/sdk"
+
+type CommandAndReason = {
+  command: string
+  reason?: string
+}
 
 const successfulCurls: string[] = []
-const failedCurls: string[] = []
+const failedCurls: CommandAndReason[] = []
 
 
 
 declare global {
   var isVerbose: boolean
+  var isPrompts: boolean
+  var isVariables: boolean
 }
 if (import.meta.main) {
   const flags = parseArgs(Deno.args,
@@ -80,7 +86,7 @@ if (import.meta.main) {
     const modelsOutput = {
       openai: {}, anthropic: {}
     }
-    modelsOutput.openai = models.openai.data.map(model => model.id)
+    modelsOutput.openai = models.openai?.data?.map(model => model.id) ?? {}
     modelsOutput.anthropic = models.anthropic.map(model => model.Name)
     console.log(modelsOutput)
   } else {
@@ -180,12 +186,11 @@ async function generateCurls(model: string, taskContent: string,
 }
 
 async function generateCurlsWithAnthropic(client: Anthropic, model: string, prompt: string, apiKey: string, endpoint: string, executeCommands: boolean) {
-
-  const messageParams: MessageCreateParamsBase = {
+  const messageParams: Anthropic.MessageCreateParams = {
     max_tokens: 1024,
     model,
     messages: [{
-      role: "user",
+      role: "user" as const,
       content: prompt
     }],
     tools: [
@@ -235,7 +240,7 @@ async function generateCurlsWithAnthropic(client: Anthropic, model: string, prom
     if (message.type === "text") {
       console.log(message.text)
     } else if (message.type === "tool_use") {
-      const commands = message.input ? message.input['commands'] as Array<{command: string, explanation: string, expected_success: false}> : []
+      const commands = message.input && typeof message.input === 'object' ? (message.input as {commands?: Array<{command: string, explanation: string, expected_success: boolean}>}).commands || [] : []
 
       const transformedCommands = commands.map(cmd => ({command: cmd.command, expected_success: cmd.expected_success}))
       const response = await runCurlsAndReturnResult(transformedCommands, endpoint, apiKey, executeCommands)
@@ -244,14 +249,16 @@ async function generateCurlsWithAnthropic(client: Anthropic, model: string, prom
         console.log({response})
       }
       messageParams.messages.push({
-        role: "assistant",
-        content: curlCommands.content
+        role: "assistant" as const,
+        content: JSON.stringify(curlCommands.content)
       })
       messageParams.messages.push({
-        role: "user",
+        role: "user" as const,
         content: [{
-          type: "tool_result", tool_use_id: message.id, content: `We were able to run the curls with following response: ${response.join("\n")}`
 
+          type: "tool_result",
+          tool_use_id: message.id,
+          content: `We were able to run the curls with following response: ${response.join("\n")}`
         }]
       })
       if (globalThis.isVerbose) {
@@ -338,7 +345,7 @@ async function generateCurlsWithOpenAI(client: OpenAI, model: string, taskConten
         if (toolCall.functionName === "generateCurlCommands") {
 
           const response = await runCurlsAndReturnResult(toolCall.arguments.commands.
-            map(cmd => ({
+            map((cmd: {command: string, expected_success: boolean}) => ({
               command: cmd.command, expected_success: cmd.expected_success
             })), endpoint, apiKey, executeCommands)
           const id = toolCall.id
@@ -385,7 +392,9 @@ async function sendToOpenAi(model: string, chatParams: ChatCompletionCreateParam
   if (globalThis.isVerbose) {
     console.log({chatParams: JSON.stringify(chatParams, null, 2)})
   }
+
   const curlCommands = await client.chat.completions.create(chatParams) as ChatCompletion
+
   return curlCommands
 }
 
@@ -437,11 +446,12 @@ async function runCurlsAndReturnResult(curlCommands: Array<{command: string, exp
           console.log({result})
         }
       } catch (error) {
-        result = `Failed to execute curl command: ${commandWithoutFirstWord}. Error: ${error.message}`
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        result = `Failed to execute curl command: ${commandWithoutFirstWord}. Error: ${errorMessage}`
         console.error(result)
         failedCurls.push({
           command: commandWithoutFirstWord,
-          reason: `Execution failed: ${error.message}`
+          reason: `Execution failed: ${errorMessage}`
         })
       }
       results.push(result)

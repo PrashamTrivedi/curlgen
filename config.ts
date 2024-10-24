@@ -27,19 +27,18 @@ function createConfigPath() {
     return configPath
 }
 
-export function handleConfig(flags: Record<string, string | boolean | unknown>) {
+export function handleConfig(flags: Record<string, string | boolean | unknown> & { _: (string | number)[] }) {
     if (globalThis.isVerbose) {
-
         console.log(flags)
     }
-    const subSubCommand = flags._[1]
+    const subSubCommand = flags._[1]?.toString()
     if (subSubCommand === "read") {
-        const configKey = flags._[2] || flags.configKey
+        const configKey = (flags._[2]?.toString() || flags.configKey) as string
         const config = readConfig(configKey)
         console.log(config)
     } else if (subSubCommand === "write") {
-        const configKey = flags._[2] || flags.configKey
-        const configValue = flags._[3] || flags.configValue
+        const configKey = (flags._[2]?.toString() || flags.configKey) as string
+        const configValue = (flags._[3]?.toString() || flags.configValue) as string
         const config = readConfig()
         config[configKey] = configValue
         writeConfig(config)
