@@ -31,7 +31,7 @@ jobs:
           deno compile --output dist/curlgen-windows-amd64.exe --allow-env --allow-run --allow-net --allow-read --allow-write --target x86_64-pc-windows-msvc main.ts
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/curlgen-linux-amd64
