@@ -187,7 +187,7 @@ async function generateCurls(model: string, taskContent: string,
 
 async function generateCurlsWithAnthropic(client: Anthropic, model: string, prompt: string, apiKey: string, endpoint: string, executeCommands: boolean) {
   const messageParams: Anthropic.MessageCreateParams = {
-    max_tokens: 1024,
+    max_tokens: 8192,
     model,
     messages: [{
       role: "user" as const,
@@ -235,13 +235,14 @@ async function generateCurlsWithAnthropic(client: Anthropic, model: string, prom
   if (globalThis.isVerbose) {
     console.log({curlCommands: JSON.stringify(curlCommands, null, 2)})
   }
+  let toolUseId = ""
   const contentMessages = curlCommands.content
   for (const message of contentMessages) {
     if (message.type === "text") {
       console.log(message.text)
     } else if (message.type === "tool_use") {
       const commands = message.input && typeof message.input === 'object' ? (message.input as {commands?: Array<{command: string, explanation: string, expected_success: boolean}>}).commands || [] : []
-
+      toolUseId = message.id
       const transformedCommands = commands.map(cmd => ({command: cmd.command, expected_success: cmd.expected_success}))
       const response = await runCurlsAndReturnResult(transformedCommands, endpoint, apiKey, executeCommands)
       if (globalThis.isVerbose) {
@@ -250,14 +251,14 @@ async function generateCurlsWithAnthropic(client: Anthropic, model: string, prom
       }
       messageParams.messages.push({
         role: "assistant" as const,
-        content: JSON.stringify(curlCommands.content)
+        content: curlCommands.content
       })
       messageParams.messages.push({
         role: "user" as const,
         content: [{
 
           type: "tool_result",
-          tool_use_id: message.id,
+          tool_use_id: toolUseId,
           content: `We were able to run the curls with following response: ${response.join("\n")}`
         }]
       })
@@ -415,6 +416,7 @@ async function runCurlsAndReturnResult(curlCommands: Array<{command: string, exp
       console.log({commandWithoutFirstWord})
     }
     console.log(`Running: ${commandWithoutFirstWord}`)
+    console.log({executeCommands})
     if (!executeCommands) {
       result = commandWithoutFirstWord
       successfulCurls.push(commandWithoutFirstWord)

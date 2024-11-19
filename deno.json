@@ -2,6 +2,7 @@
   "tasks": {
     "dev": "deno run --allow-env --allow-run --allow-net --allow-read --allow-write --watch main.ts",
     "local": "deno run --allow-env --allow-run --allow-net --allow-read --allow-write  main.ts",
+    "build": "deno compile --output build/  --allow-env --allow-run --allow-net --allow-read --allow-write main.ts",
     "buildLocal": "deno compile --output build/  -A main.ts "
   },
   "imports": {
