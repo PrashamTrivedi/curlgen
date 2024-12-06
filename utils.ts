@@ -85,3 +85,25 @@ export function getFiles(files: string[]) {
     }
     return filesContent.join("\n")
 }
+
+export function getApiGatewaySchemaFile(schema: string) {
+
+    const readPermission = Deno.permissions.querySync({name: "read", path: schema})
+    if (readPermission.state === 'prompt') {
+        const readRequest = Deno.permissions.requestSync({
+            name: "read",
+            path: schema,
+        })
+        if (readRequest.state === 'granted') {
+            return Deno.readTextFileSync(schema)
+        } else {
+            console.error("Permission denied")
+            Deno.exit(1)
+        }
+    } else if (readPermission.state === "granted") {
+        return Deno.readTextFileSync(schema)
+    } else {
+        return schema
+    }
+
+}

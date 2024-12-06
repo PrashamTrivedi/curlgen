@@ -2,7 +2,7 @@
 import {parseArgs} from "jsr:@std/cli/parse-args"
 import {runHelp} from "./help.ts"
 import {handleConfig} from "./config.ts"
-import {getExamplesFile, getFiles, getTaskFile} from "./utils.ts"
+import {getApiGatewaySchemaFile, getExamplesFile, getFiles, getTaskFile} from "./utils.ts"
 import {determineClient, listModels} from "./aiClients.ts"
 import OpenAI from "openai/mod.ts"
 import {generateCurl, generatePrompt} from "./prompt.ts"
@@ -111,16 +111,17 @@ if (import.meta.main) {
 
     const taskContent = getTaskFile(task)
     const filesContent = getFiles(files)
+    const apiGatewaySchemaContent = getApiGatewaySchemaFile(apiGatewaySchema)
     const examplesContent = getExamplesFile(examples)
     if (globalThis.isVerbose) {
-      console.log({taskContent, files, filesContent, examplesContent, executeCommands})
+      console.log({taskContent, files, filesContent, examplesContent, apiGatewaySchemaContent, executeCommands})
     }
     if (!taskContent || !filesContent) {
       console.error("Task and files are required")
       Deno.exit(1)
     }
     await generateCurls(model, taskContent, filesContent,
-      apiGatewaySchema, apiKey, endpoint, examplesContent, requiresLogin, executeCommands)
+      apiGatewaySchemaContent, apiKey, endpoint, examplesContent, requiresLogin, executeCommands)
 
     // Add this line to print the results
     printCurlResults()
@@ -243,6 +244,11 @@ async function generateCurlsWithAnthropic(client: Anthropic, model: string, prom
     } else if (message.type === "tool_use") {
       const commands = message.input && typeof message.input === 'object' ? (message.input as {commands?: Array<{command: string, explanation: string, expected_success: boolean}>}).commands || [] : []
       toolUseId = message.id
+      if (!Array.isArray(commands)) {
+        console.error("Commands should be an array")
+        console.log({commands, input: message.input, type: typeof message.input})
+        Deno.exit(1)
+      }
       const transformedCommands = commands.map(cmd => ({command: cmd.command, expected_success: cmd.expected_success}))
       const response = await runCurlsAndReturnResult(transformedCommands, endpoint, apiKey, executeCommands)
       if (globalThis.isVerbose) {
